@@ -12,10 +12,7 @@ from xrpl.transaction import submit_and_wait
 nest_asyncio.apply()
 
 def register_nft_with_root_network(nft_details: dict):
-    """
-    NFT를 가상 API(The Root Network)에 등록하는 함수.
-    실제 API 요청은 해당 문서를 참조하여 구현해야 함.
-    """
+    #NFT를 가상 API(The Root Network)에 등록
     print("NFT가 The Root Network에 등록되었습니다:", nft_details)
 
 def main():
