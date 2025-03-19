@@ -2,7 +2,7 @@ import tkinter as tk
 import xrpl
 import json
 
-from mod1 import get_account, get_account_info, send_xrp
+from modules.mod1 import get_account, get_account_info, send_xrp
 
 #############################################
 ## Handlers #################################
