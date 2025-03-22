@@ -1,248 +1,584 @@
-import os
-import logging
-import nest_asyncio
-import asyncio
+import tkinter as tk
+import xrpl
+import json
 
-from xrpl.clients import JsonRpcClient
-from xrpl.asyncio.clients import AsyncJsonRpcClient
-from xrpl.wallet import generate_faucet_wallet, Wallet
-from xrpl.account import get_balance
-from xrpl.models.requests import ServerInfo
-from xrpl.models.transactions import NFTokenMint, Payment
-from xrpl.transaction import submit_and_wait, autofill_and_sign
-import xrpl.utils
-from xrpl.core import keypairs, addresscodec
-from xrpl.ledger import get_fee
-from xrpl.asyncio.transaction import submit_and_wait as async_submit_and_wait
-from xrpl.asyncio.ledger import get_latest_validated_ledger_sequence
-from xrpl.asyncio.account import get_next_valid_seq_number
+from modules.mod1 import get_account, get_account_info, send_xrp
+from modules.mod2 import (
+    create_trust_line,
+    send_currency,
+    get_balance,
+    configure_account,
+)
+from modules.mod3 import (
+    mint_token,
+    get_tokens,
+    burn_token,
+)
+from modules.mod4 import (
+    create_sell_offer,
+    create_buy_offer,
+    get_offers,
+    cancel_offer,
+    accept_sell_offer,
+    accept_buy_offer,
+)
 
-from modules import config # config.py 파일 import
+#############################################
+## Handlers #################################
+#############################################
 
-# 로깅 설정: 시간, 로그 레벨, 메시지 출력
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-logger = logging.getLogger(__name__)
+# Module 4 Handlers
 
-# Nest AsyncIO 적용 (Notebook, Jupyter 등에서 event loop 중첩 문제 해결)
-nest_asyncio.apply()
-
-def register_nft_with_root_network(nft_details: dict) -> None:
-    """
-    NFT를 가상 API(The Root Network)에 등록하는 함수.
-    실제 API 요청은 해당 문서를 참고하여 구현하세요.
-    """
-    logger.info("NFT가 The Root Network에 등록되었습니다: %s", nft_details)
-
-def nft_minting_example() -> None:
-    """
-    Devnet에 연결하여 NFT 민팅 트랜잭션을 처리하는 예제 함수.
-    """
-    # Devnet URL 연결 (config에 정의된 값 사용)
-    devnet_url = config.DEVNET_URL + "/"
-    client = JsonRpcClient(devnet_url)
-
-    # 서버 정보 확인
-    server_info = client.request(ServerInfo())
-    logger.info("서버 정보: %s", server_info.result)
-
-    # Faucet을 이용해 새로운 테스트 지갑 생성
-    wallet = generate_faucet_wallet(client)
-    logger.info("지갑 주소: %s", wallet.classic_address)
-    logger.info("비밀키: %s", wallet.seed)
-
-    # 잔액 확인
-    balance = get_balance(wallet.classic_address, client)
-    logger.info("잔액: %s XRP", balance)
-
-    # NFT 민팅 트랜잭션 생성 (Tokenization)
-    nft_mint_tx = NFTokenMint(
-        account=wallet.classic_address,
-        nftoken_taxon=0,  # NFT 분류 (0: 기본 분류)
-        uri=xrpl.utils.str_to_hex("https://example.com/nft/metadata.json"),
-        flags=8  # 8: Transferable(양도가능) NFT 설정
+def standby_create_sell_offer():
+    results = create_sell_offer(
+        ent_standby_seed.get(),
+        ent_standby_amount.get(),
+        ent_standby_nft_id.get(),
+        ent_standby_expiration.get(),
+        ent_standby_destination.get()
     )
-    logger.info("NFT 민팅 중...")
-    nft_response = submit_and_wait(nft_mint_tx, client, wallet)
-    logger.info("NFT 민팅 결과: %s", nft_response.result)
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
 
-    # 민팅 결과에 hash가 포함되면 등록 처리
-    if "hash" in nft_response.result:
-        nft_hash = nft_response.result["hash"]
-        nft_details = {
-            "nft_hash": nft_hash,
-            "metadata_uri": "https://example.com/nft/metadata.json",
-            "owner": wallet.classic_address,
-        }
-        register_nft_with_root_network(nft_details)
-    else:
-        logger.error("NFT 등록 실패")
 
-class XRPLExample:
-    """
-    XRPL Devnet 연결, 지갑 생성, 트랜잭션 처리, 주소 변환 기능을 제공하는 클래스.
-    """
-    def __init__(self, json_rpc_url: str) -> None:
-        # 동기 및 비동기 클라이언트 초기화
-        self.json_rpc_url = json_rpc_url
-        self.client = JsonRpcClient(json_rpc_url)
-        self.async_client = AsyncJsonRpcClient(json_rpc_url)
+def standby_accept_sell_offer():
+    results = accept_sell_offer (
+        ent_standby_seed.get(),
+        ent_standby_nft_offer_index.get()
+    )
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
 
-    def create_wallet_from_seed(self, seed: str) -> Wallet:
-        """
-        기존 시드를 이용해 지갑(Wallet)을 생성합니다.
-        """
-        try:
-            wallet = Wallet.from_seed(seed)
-            logger.info("Seed로 생성된 지갑 정보: %s", wallet)
-            return wallet
-        except Exception as e:
-            logger.error("Seed로 지갑 생성 실패: %s", e)
-            raise
 
-    def generate_faucet_wallet(self) -> Wallet:
-        """
-        Faucet을 이용해 테스트 지갑을 생성합니다.
-        """
-        try:
-            test_wallet = generate_faucet_wallet(self.client)
-            logger.info("Faucet으로 생성된 테스트 지갑의 클래식 주소: %s", test_wallet.classic_address)
-            return test_wallet
-        except Exception as e:
-            logger.error("Faucet 지갑 생성 실패: %s", e)
-            raise
+def standby_create_buy_offer():
+    results = create_buy_offer(
+        ent_standby_seed.get(),
+        ent_standby_amount.get(),
+        ent_standby_nft_id.get(),
+        ent_standby_owner.get(),
+        ent_standby_expiration.get(),
+        ent_standby_destination.get()
+    )
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
 
-    def generate_new_keypair(self) -> dict:
-        """
-        새로운 시드를 생성하여 공개키, 비공개키와 클래식 주소를 도출합니다.
-        """
-        try:
-            seed = keypairs.generate_seed()
-            public, private = keypairs.derive_keypair(seed)
-            classic_address = keypairs.derive_classic_address(public)
-            logger.info("새로운 공개키: %s", public)
-            logger.info("새로운 비공개키: %s", private)
-            logger.info("새로운 클래식 주소: %s", classic_address)
-            return {"seed": seed, "public": public, "private": private, "classic_address": classic_address}
-        except Exception as e:
-            logger.error("새로운 키 쌍 생성 실패: %s", e)
-            raise
 
-    def get_current_fee(self) -> str:
-        """
-        현재 거래 수수료(fee)를 조회합니다.
-        """
-        try:
-            fee = get_fee(self.client)
-            logger.info("현재 거래 수수료 (drops): %s", fee)
-            return fee
-        except Exception as e:
-            logger.error("거래 수수료 조회 실패: %s", e)
-            raise
+def standby_accept_buy_offer():
+    results = accept_buy_offer (
+        ent_standby_seed.get(),
+        ent_standby_nft_offer_index.get()
+    )
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
 
-    def submit_payment_sync(self, test_wallet: Wallet, amount: str, destination: str) -> dict:
-        """
-        동기 방식으로 Payment 트랜잭션을 생성, 서명 및 제출합니다.
-        - amount: drops 단위 (예: 2200000 drops = 2.2 XRP)
-        - destination: 수신 계정 주소
-        """
-        try:
-            payment = Payment(
-                account=test_wallet.classic_address,
-                amount=str(amount),
-                destination=destination
-            )
-            payment_signed = autofill_and_sign(payment, self.client, test_wallet)
-            logger.info("서명된 Payment 트랜잭션: %s", payment_signed)
-            response = submit_and_wait(payment_signed, self.client)
-            logger.info("동기 방식 트랜잭션 응답: %s", response)
-            return response.result
-        except Exception as e:
-            logger.error("동기 트랜잭션 제출 실패: %s", e)
-            raise
 
-    async def submit_payment_async(self, test_wallet: Wallet, amount: str, destination: str) -> dict:
-        """
-        비동기 방식으로 Payment 트랜잭션을 생성, 서명 및 제출합니다.
-        """
-        try:
-            current_validated_ledger = await get_latest_validated_ledger_sequence(self.async_client)
-            next_seq = await get_next_valid_seq_number(test_wallet.classic_address, self.async_client)
-            payment = Payment(
-                account=test_wallet.classic_address,
-                amount=str(amount),
-                destination=destination,
-                last_ledger_sequence=current_validated_ledger + 20,
-                sequence=next_seq,
-                fee="10"
-            )
-            response = await async_submit_and_wait(payment, self.async_client, test_wallet)
-            logger.info("비동기 방식 트랜잭션 응답: %s", response)
-            return response.result
-        except Exception as e:
-            logger.error("비동기 트랜잭션 제출 실패: %s", e)
-            raise
+def standby_get_offers():
+    results = get_offers(ent_standby_nft_id.get())
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", results)
 
-    def convert_classic_to_xaddress(self, classic_address: str, tag: int = 0, is_test_network: bool = True) -> str:
-        """
-        클래식 주소를 X-주소로 변환합니다.
-        """
-        try:
-            xaddress = addresscodec.classic_address_to_xaddress(
-                classic_address,
-                tag=tag,
-                is_test_network=is_test_network
-            )
-            logger.info("변환된 X-주소: %s", xaddress)
-            return xaddress
-        except Exception as e:
-            logger.error("주소 변환 실패: %s", e)
-            raise
 
-def run_xrpl_example() -> None:
-    """
-    XRPLExample 클래스를 이용하여 전체 예제 코드를 실행합니다.
-    """
-    # Devnet JSON-RPC URL (config.DEVNET_URL 사용)
-    json_rpc_url = config.DEVNET_URL
-    xrpl_example = XRPLExample(json_rpc_url)
+def standby_cancel_offer():
+    results = cancel_offer(
+        ent_standby_seed.get(),
+        ent_standby_nft_offer_index.get()
+    )
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
 
-    # 1. 기존 시드로 지갑 생성 (config.SAMPLE_SEED 사용)
-    try:
-        wallet_from_seed = xrpl_example.create_wallet_from_seed(config.SAMPLE_SEED)
-    except Exception:
-        logger.warning("Seed 지갑 생성에 실패하여 진행하지 않습니다.")
-        return
 
-    # 2. Faucet을 이용한 테스트 지갑 생성
-    try:
-        test_wallet = xrpl_example.generate_faucet_wallet()
-    except Exception:
-        logger.warning("Faucet 지갑 생성에 실패하여 진행하지 않습니다.")
-        return
+def op_create_sell_offer():
+    results = create_sell_offer(
+        ent_operational_seed.get(),
+        ent_operational_amount.get(),
+        ent_operational_nft_id.get(),
+        ent_operational_expiration.get(),
+        ent_operational_destination.get()
+    )
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
 
-    # 3. 새로운 시드로 키 쌍 생성 및 주소 도출
-    xrpl_example.generate_new_keypair()
 
-    # 4. 현재 거래 수수료 조회
-    xrpl_example.get_current_fee()
+def op_accept_sell_offer():
+    results = accept_sell_offer (
+        ent_operational_seed.get(),
+        ent_operational_nft_offer_index.get()
+    )
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
 
-    # 5. Payment 트랜잭션 생성, 서명 및 제출 (동기 방식)
-    destination_address = "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe"
-    try:
-        xrpl_example.submit_payment_sync(test_wallet, "2200000", destination_address)
-    except Exception:
-        logger.error("동기 Payment 트랜잭션 제출 중 오류 발생")
 
-    # 6. Payment 트랜잭션 제출 (비동기 방식)
-    try:
-        asyncio.run(xrpl_example.submit_payment_async(test_wallet, "2200000", destination_address))
-    except Exception:
-        logger.error("비동기 Payment 트랜잭션 제출 중 오류 발생")
+def op_create_buy_offer():
+    results = create_buy_offer(
+        ent_operational_seed.get(),
+        ent_operational_amount.get(),
+        ent_operational_nft_id.get(),
+        ent_operational_owner.get(),
+        ent_operational_expiration.get(),
+        ent_operational_destination.get()
+    )
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
 
-    # 7. 클래식 주소를 X-주소로 변환 (예시 주소 사용)
-    xrpl_example.convert_classic_to_xaddress("rMPUKmzmDWEX1tQhzQ8oGFNfAEhnWNFwz", tag=0, is_test_network=True)
 
-if __name__ == "__main__":
-    # 선택한 예제 실행: nft_minting_example() 또는 run_xrpl_example()
-    # nft_minting_example()
-    run_xrpl_example()
+def op_accept_buy_offer():
+    results = accept_buy_offer (
+        ent_operational_seed.get(),
+        ent_operational_nft_offer_index.get()
+    )
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def op_get_offers():
+    results = get_offers(ent_operational_nft_id.get())
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", results)
+
+
+def op_cancel_offer():
+    results = cancel_offer(
+        ent_operational_seed.get(),
+        ent_operational_nft_offer_index.get()
+    )
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+# Module 3 Handlers
+
+def standby_mint_token():
+    results = mint_token(
+        ent_standby_seed.get(),
+        ent_standby_uri.get(),
+        ent_standby_flags.get(),
+        ent_standby_transfer_fee.get(),
+        ent_standby_taxon.get()
+    )
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def standby_get_tokens():
+    results = get_tokens(ent_standby_account.get())
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def standby_burn_token():
+    results = burn_token(
+        ent_standby_seed.get(),
+        ent_standby_nft_id.get()
+    )
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def operational_mint_token():
+    results = mint_token(
+        ent_operational_seed.get(),
+        ent_operational_uri.get(),
+        ent_operational_flags.get(),
+        ent_operational_transfer_fee.get(),
+        ent_operational_taxon.get()
+    )
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def operational_get_tokens():
+    results = get_tokens(ent_operational_account.get())
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def operational_burn_token():
+    results = burn_token(
+        ent_operational_seed.get(),
+        ent_operational_nft_id.get()
+    )
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+# Module 2 Handlers
+
+def standby_create_trust_line():
+    results = create_trust_line(ent_standby_seed.get(),
+        ent_standby_destination.get(),
+        ent_standby_currency.get(),
+        ent_standby_amount.get())
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def standby_send_currency():
+    results = send_currency(ent_standby_seed.get(),
+        ent_standby_destination.get(),
+        ent_standby_currency.get(),
+        ent_standby_amount.get())
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def standby_configure_account():
+    results = configure_account(
+        ent_standby_seed.get(),
+        standbyRippling)
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def operational_create_trust_line():
+    results = create_trust_line(ent_operational_seed.get(),
+        ent_operational_destination.get(),
+        ent_operational_currency.get(),
+        ent_operational_amount.get())
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def operational_send_currency():
+    results = send_currency(ent_operational_seed.get(),
+        ent_operational_destination.get(),
+        ent_operational_currency.get(),
+        ent_operational_amount.get())
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def operational_configure_account():
+    results = configure_account(
+        ent_operational_seed.get(),
+        operationalRippling)
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+def get_balances():
+    results = get_balance(ent_operational_account.get(), ent_standby_account.get())
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+    results = get_balance(ent_standby_account.get(), ent_operational_account.get())
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0", json.dumps(results, indent=4))
+
+
+# Module 1 Handlers
+def get_standby_account():
+    new_wallet = get_account(ent_standby_seed.get())
+    ent_standby_account.delete(0, tk.END)
+    ent_standby_seed.delete(0, tk.END)
+    ent_standby_account.insert(0, new_wallet.classic_address)
+    ent_standby_seed.insert(0, new_wallet.seed)
+
+
+def get_standby_account_info():
+    accountInfo = get_account_info(ent_standby_account.get())
+    ent_standby_balance.delete(0, tk.END)
+    ent_standby_balance.insert(0,accountInfo['Balance'])
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0",json.dumps(accountInfo, indent=4))
+
+
+def standby_send_xrp():
+    response = send_xrp(ent_standby_seed.get(),ent_standby_amount.get(),
+                       ent_standby_destination.get())
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0",json.dumps(response.result, indent=4))
+    get_standby_account_info()
+    get_operational_account_info()
+
+
+def get_operational_account():
+    new_wallet = get_account(ent_operational_seed.get())
+    ent_operational_account.delete(0, tk.END)
+    ent_operational_account.insert(0, new_wallet.classic_address)
+    ent_operational_seed.delete(0, tk.END)
+    ent_operational_seed.insert(0, new_wallet.seed)
+
+
+def get_operational_account_info():
+    accountInfo = get_account_info(ent_operational_account.get())
+    ent_operational_balance.delete(0, tk.END)
+    ent_operational_balance.insert(0,accountInfo['Balance'])
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0",json.dumps(accountInfo, indent=4))
+
+
+def operational_send_xrp():
+    response = send_xrp(ent_operational_seed.get(),ent_operational_amount.get(), ent_operational_destination.get())
+    text_operational_results.delete("1.0", tk.END)
+    text_operational_results.insert("1.0",json.dumps(response.result,indent=4))
+    get_standby_account_info()
+    get_operational_account_info()
+
+
+# Create a new window with the title "Quickstart Module 4"
+window = tk.Tk()
+window.title("Quickstart Module 4")
+
+
+standbyRippling = tk.BooleanVar()
+operationalRippling = tk.BooleanVar()
+
+
+# Form frame
+frm_form = tk.Frame(relief=tk.SUNKEN, borderwidth=3)
+frm_form.pack()
+
+# Create the Label and Entry widgets for "Standby Account"
+lbl_standy_seed = tk.Label(master=frm_form, text="Standby Seed")
+ent_standby_seed = tk.Entry(master=frm_form, width=50)
+lbl_standby_account = tk.Label(master=frm_form, text="Standby Account")
+ent_standby_account = tk.Entry(master=frm_form, width=50)
+lbl_standy_amount = tk.Label(master=frm_form, text="Amount")
+ent_standby_amount = tk.Entry(master=frm_form, width=50)
+lbl_standby_destination = tk.Label(master=frm_form, text="Destination")
+ent_standby_destination = tk.Entry(master=frm_form, width=50)
+lbl_standby_balance = tk.Label(master=frm_form, text="XRP Balance")
+ent_standby_balance = tk.Entry(master=frm_form, width=50)
+lbl_standby_currency = tk.Label(master=frm_form, text="Currency")
+ent_standby_currency = tk.Entry(master=frm_form, width=50)
+cb_standby_allow_rippling = tk.Checkbutton(master=frm_form, text="Allow Rippling", variable=standbyRippling, onvalue=True, offvalue=False)
+lbl_standby_uri = tk.Label(master=frm_form, text="NFT URI")
+ent_standby_uri = tk.Entry(master=frm_form, width=50)
+lbl_standby_flags = tk.Label(master=frm_form, text="Flags")
+ent_standby_flags = tk.Entry(master=frm_form, width=50)
+lbl_standby_transfer_fee = tk.Label(master=frm_form, text="Transfer Fee")
+ent_standby_transfer_fee = tk.Entry(master=frm_form, width="50")
+lbl_standby_taxon = tk.Label(master=frm_form, text="Taxon")
+ent_standby_taxon = tk.Entry(master=frm_form, width="50")
+lbl_standby_nft_id = tk.Label(master=frm_form, text="NFT ID")
+ent_standby_nft_id = tk.Entry(master=frm_form, width="50")
+lbl_standby_nft_offer_index = tk.Label(master=frm_form, text="NFT Offer Index")
+ent_standby_nft_offer_index = tk.Entry(master=frm_form, width="50")
+lbl_standby_owner = tk.Label(master=frm_form, text="Owner")
+ent_standby_owner = tk.Entry(master=frm_form, width="50")
+lbl_standby_expiration = tk.Label(master=frm_form, text="Expiration")
+ent_standby_expiration = tk.Entry(master=frm_form, width="50")
+lbl_standby_results = tk.Label(master=frm_form,text='Results')
+text_standby_results = tk.Text(master=frm_form, height = 20, width = 65)
+
+
+
+
+# Place field in a grid.
+lbl_standy_seed.grid(row=0, column=0, sticky="w")
+ent_standby_seed.grid(row=0, column=1)
+lbl_standby_account.grid(row=2, column=0, sticky="e")
+ent_standby_account.grid(row=2, column=1)
+lbl_standy_amount.grid(row=3, column=0, sticky="e")
+ent_standby_amount.grid(row=3, column=1)
+lbl_standby_destination.grid(row=4, column=0, sticky="e")
+ent_standby_destination.grid(row=4, column=1)
+lbl_standby_balance.grid(row=5, column=0, sticky="e")
+ent_standby_balance.grid(row=5, column=1)
+lbl_standby_currency.grid(row=6, column=0, sticky="e")
+ent_standby_currency.grid(row=6, column=1)
+cb_standby_allow_rippling.grid(row=7,column=1, sticky="w")
+lbl_standby_uri.grid(row=8, column=0, sticky="e")
+ent_standby_uri.grid(row=8, column=1, sticky="w")
+lbl_standby_flags.grid(row=9, column=0, sticky="e")
+ent_standby_flags.grid(row=9, column=1, sticky="w")
+lbl_standby_transfer_fee.grid(row=10, column=0, sticky="e")
+ent_standby_transfer_fee.grid(row=10, column=1, sticky="w")
+lbl_standby_taxon.grid(row=11, column=0, sticky="e")
+ent_standby_taxon.grid(row=11, column=1, sticky="w")
+lbl_standby_nft_id.grid(row=12, column=0, sticky="e")
+ent_standby_nft_id.grid(row=12, column=1, sticky="w")
+lbl_standby_nft_offer_index.grid(row=13, column=0, sticky="ne")
+ent_standby_nft_offer_index.grid(row=13, column=1, sticky="w")
+lbl_standby_owner.grid(row=14, column=0, sticky="ne")
+ent_standby_owner.grid(row=14, column=1, sticky="w")
+lbl_standby_expiration.grid(row=15, column=0, sticky="ne")
+ent_standby_expiration.grid(row=15, column=1, sticky="w")
+lbl_standby_results.grid(row=17, column=0, sticky="ne")
+text_standby_results.grid(row=17, column=1, sticky="nw")
+
+cb_standby_allow_rippling.select()
+
+###############################################
+## Operational Account ########################
+###############################################
+
+# Create the Label and Entry widgets for "Operational Account"
+lbl_operational_seed = tk.Label(master=frm_form, text="Operational Seed")
+ent_operational_seed = tk.Entry(master=frm_form, width=50)
+lbl_operational_account = tk.Label(master=frm_form, text="Operational Account")
+ent_operational_account = tk.Entry(master=frm_form, width=50)
+lbl_operational_amount = tk.Label(master=frm_form, text="Amount")
+ent_operational_amount = tk.Entry(master=frm_form, width=50)
+lbl_operational_destination = tk.Label(master=frm_form, text="Destination")
+ent_operational_destination = tk.Entry(master=frm_form, width=50)
+lbl_operational_balance = tk.Label(master=frm_form, text="XRP Balance")
+ent_operational_balance = tk.Entry(master=frm_form, width=50)
+lbl_operational_currency = tk.Label(master=frm_form, text="Currency")
+ent_operational_currency = tk.Entry(master=frm_form, width=50)
+cb_operational_allow_rippling = tk.Checkbutton(master=frm_form, text="Allow Rippling", variable=operationalRippling, onvalue=True, offvalue=False)
+lbl_operational_uri = tk.Label(master=frm_form, text="NFT URI")
+ent_operational_uri = tk.Entry(master=frm_form, width=50)
+lbl_operational_flags = tk.Label(master=frm_form, text="Flags")
+ent_operational_flags = tk.Entry(master=frm_form, width=50)
+lbl_operational_transfer_fee = tk.Label(master=frm_form, text="Transfer Fee")
+ent_operational_transfer_fee = tk.Entry(master=frm_form, width="50")
+lbl_operational_taxon = tk.Label(master=frm_form, text="Taxon")
+ent_operational_taxon = tk.Entry(master=frm_form, width="50")
+lbl_operational_nft_id = tk.Label(master=frm_form, text="NFT ID")
+ent_operational_nft_id = tk.Entry(master=frm_form, width="50")
+lbl_operational_nft_offer_index = tk.Label(master=frm_form, text="NFT Offer Index")
+ent_operational_nft_offer_index = tk.Entry(master=frm_form, width="50")
+lbl_operational_owner = tk.Label(master=frm_form, text="Owner")
+ent_operational_owner = tk.Entry(master=frm_form, width="50")
+lbl_operational_expiration = tk.Label(master=frm_form, text="Expiration")
+ent_operational_expiration = tk.Entry(master=frm_form, width="50")
+lbl_operational_results = tk.Label(master=frm_form,text="Results")
+text_operational_results = tk.Text(master=frm_form, height = 20, width = 65)
+
+#Place the widgets in a grid
+lbl_operational_seed.grid(row=0, column=4, sticky="e")
+ent_operational_seed.grid(row=0, column=5, sticky="w")
+lbl_operational_account.grid(row=2,column=4, sticky="e")
+ent_operational_account.grid(row=2,column=5, sticky="w")
+lbl_operational_amount.grid(row=3, column=4, sticky="e")
+ent_operational_amount.grid(row=3, column=5, sticky="w")
+lbl_operational_destination.grid(row=4, column=4, sticky="e")
+ent_operational_destination.grid(row=4, column=5, sticky="w")
+lbl_operational_balance.grid(row=5, column=4, sticky="e")
+ent_operational_balance.grid(row=5, column=5, sticky="w")
+lbl_operational_currency.grid(row=6, column=4, sticky="e")
+ent_operational_currency.grid(row=6, column=5)
+cb_operational_allow_rippling.grid(row=7,column=5, sticky="w")
+lbl_operational_uri.grid(row=8, column=4, sticky="e")
+ent_operational_uri.grid(row=8, column=5, sticky="w")
+lbl_operational_flags.grid(row=9, column=4, sticky="e")
+ent_operational_flags.grid(row=9, column=5, sticky="w")
+lbl_operational_transfer_fee.grid(row=10, column=4, sticky="e")
+ent_operational_transfer_fee.grid(row=10, column=5, sticky="w")
+lbl_operational_taxon.grid(row=11, column=4, sticky="e")
+ent_operational_taxon.grid(row=11, column=5, sticky="w")
+lbl_operational_nft_id.grid(row=12, column=4, sticky="e")
+ent_operational_nft_id.grid(row=12, column=5, sticky="w")
+lbl_operational_nft_offer_index.grid(row=13, column=4, sticky="ne")
+ent_operational_nft_offer_index.grid(row=13, column=5, sticky="w")
+lbl_operational_owner.grid(row=14, column=4, sticky="ne")
+ent_operational_owner.grid(row=14, column=5, sticky="w")
+lbl_operational_expiration.grid(row=15, column=4, sticky="ne")
+ent_operational_expiration.grid(row=15, column=5, sticky="w")
+lbl_operational_results.grid(row=17, column=4, sticky="ne")
+text_operational_results.grid(row=17, column=5, sticky="nw")
+
+cb_operational_allow_rippling.select()
+
+#############################################
+## Buttons ##################################
+#############################################
+
+# Create the Standby Account Buttons
+btn_get_standby_account = tk.Button(master=frm_form, text="Get Standby Account",
+                                    command = get_standby_account)
+btn_get_standby_account.grid(row=0, column=2, sticky = "nsew")
+btn_get_standby_account_info = tk.Button(master=frm_form,
+                                         text="Get Standby Account Info",
+                                         command = get_standby_account_info)
+btn_get_standby_account_info.grid(row=1, column=2, sticky = "nsew")
+btn_standby_send_xrp = tk.Button(master=frm_form, text="Send XRP >",
+                                 command = standby_send_xrp)
+btn_standby_send_xrp.grid(row=2, column = 2, sticky = "nsew")
+btn_standby_create_trust_line = tk.Button(master=frm_form,
+                                         text="Create Trust Line",
+                                         command = standby_create_trust_line)
+btn_standby_create_trust_line.grid(row=4, column=2, sticky = "nsew")
+btn_standby_send_currency = tk.Button(master=frm_form, text="Send Currency >",
+                                      command = standby_send_currency)
+btn_standby_send_currency.grid(row=5, column=2, sticky = "nsew")
+btn_standby_send_currency = tk.Button(master=frm_form, text="Get Balances",
+                                      command = get_balances)
+btn_standby_send_currency.grid(row=6, column=2, sticky = "nsew")
+btn_standby_configure_account = tk.Button(master=frm_form,
+                                          text="Configure Account",
+                                          command = standby_configure_account)
+btn_standby_configure_account.grid(row=7,column=0, sticky = "nsew")
+btn_standby_mint_token = tk.Button(master=frm_form, text="Mint NFT",
+                                   command = standby_mint_token)
+btn_standby_mint_token.grid(row=8, column=2, sticky="nsew")
+btn_standby_get_tokens = tk.Button(master=frm_form, text="Get NFTs",
+                                   command = standby_get_tokens)
+btn_standby_get_tokens.grid(row=9, column=2, sticky="nsew")
+btn_standby_burn_token = tk.Button(master=frm_form, text="Burn NFT",
+                                   command = standby_burn_token)
+btn_standby_burn_token.grid(row=10, column=2, sticky="nsew")
+btn_standby_create_sell_offer = tk.Button(master=frm_form, text="Create Sell Offer",
+                                          command = standby_create_sell_offer)
+btn_standby_create_sell_offer.grid(row=11, column=2, sticky="nsew")
+btn_standby_accept_sell_offer = tk.Button(master=frm_form, text="Accept Sell Offer",
+                                          command = standby_accept_sell_offer)
+btn_standby_accept_sell_offer.grid(row=12, column=2, sticky="nsew")
+btn_standby_create_buy_offer = tk.Button(master=frm_form, text="Create Buy Offer",
+                                          command = standby_create_buy_offer)
+btn_standby_create_buy_offer.grid(row=13, column=2, sticky="nsew")
+btn_standby_accept_buy_offer = tk.Button(master=frm_form, text="Accept Buy Offer",
+                                          command = standby_accept_buy_offer)
+btn_standby_accept_buy_offer.grid(row=14, column=2, sticky="nsew")
+btn_standby_get_offers = tk.Button(master=frm_form, text="Get Offers",
+                                          command = standby_get_offers)
+btn_standby_get_offers.grid(row=15, column=2, sticky="nsew")
+btn_standby_cancel_offer = tk.Button(master=frm_form, text="Cancel Offer",
+                                          command = standby_cancel_offer)
+btn_standby_cancel_offer.grid(row=16, column=2, sticky="nsew")
+
+
+
+# Create the Operational Account Buttons
+btn_get_operational_account = tk.Button(master=frm_form,
+                                        text="Get Operational Account",
+                                        command = get_operational_account)
+btn_get_operational_account.grid(row=0, column=3, sticky = "nsew")
+btn_get_op_account_info = tk.Button(master=frm_form, text="Get Op Account Info",
+                                    command = get_operational_account_info)
+btn_get_op_account_info.grid(row=1, column=3, sticky = "nsew")
+btn_op_send_xrp = tk.Button(master=frm_form, text="< Send XRP",
+                            command = operational_send_xrp)
+btn_op_send_xrp.grid(row=2, column = 3, sticky = "nsew")
+btn_op_create_trust_line = tk.Button(master=frm_form, text="Create Trust Line",
+                                    command = operational_create_trust_line)
+btn_op_create_trust_line.grid(row=4, column=3, sticky = "nsew")
+btn_op_send_currency = tk.Button(master=frm_form, text="< Send Currency",
+                                 command = operational_send_currency)
+btn_op_send_currency.grid(row=5, column=3, sticky = "nsew")
+btn_op_get_balances = tk.Button(master=frm_form, text="Get Balances",
+                                command = get_balances)
+btn_op_get_balances.grid(row=6, column=3, sticky = "nsew")
+btn_op_configure_account = tk.Button(master=frm_form, text="Configure Account",
+                                     command = operational_configure_account)
+btn_op_configure_account.grid(row=7,column=4, sticky = "nsew")
+btn_op_mint_token = tk.Button(master=frm_form, text="Mint NFT",
+                              command = operational_mint_token)
+btn_op_mint_token.grid(row=8, column=3, sticky="nsew")
+btn_op_get_tokens = tk.Button(master=frm_form, text="Get NFTs",
+                              command = operational_get_tokens)
+btn_op_get_tokens.grid(row=9, column=3, sticky="nsew")
+btn_op_burn_token = tk.Button(master=frm_form, text="Burn NFT",
+                              command = operational_burn_token)
+btn_op_burn_token.grid(row=10, column=3, sticky="nsew")
+btn_op_create_sell_offer = tk.Button(master=frm_form, text="Create Sell Offer",
+                                          command = op_create_sell_offer)
+btn_op_create_sell_offer.grid(row=11, column=3, sticky="nsew")
+btn_op_accept_sell_offer = tk.Button(master=frm_form, text="Accept Sell Offer",
+                                          command = op_accept_sell_offer)
+btn_op_accept_sell_offer.grid(row=12, column=3, sticky="nsew")
+btn_op_create_buy_offer = tk.Button(master=frm_form, text="Create Buy Offer",
+                                          command = op_create_buy_offer)
+btn_op_create_buy_offer.grid(row=13, column=3, sticky="nsew")
+btn_op_accept_buy_offer = tk.Button(master=frm_form, text="Accept Buy Offer",
+                                          command = op_accept_buy_offer)
+btn_op_accept_buy_offer.grid(row=14, column=3, sticky="nsew")
+btn_op_get_offers = tk.Button(master=frm_form, text="Get Offers",
+                                          command = op_get_offers)
+btn_op_get_offers.grid(row=15, column=3, sticky="nsew")
+btn_op_cancel_offer = tk.Button(master=frm_form, text="Cancel Offer",
+                                          command = op_cancel_offer)
+btn_op_cancel_offer.grid(row=16, column=3, sticky="nsew")
+
+# Start the application
+window.mainloop()

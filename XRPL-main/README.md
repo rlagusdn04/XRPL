@@ -1,2 +1,3 @@
 # XRPL
-using XRPL with Google colab
+starting XRPL with Google colab
+
