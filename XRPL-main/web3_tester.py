@@ -1,23 +1,31 @@
 import tkinter as tk
+from tkinter import ttk
 import xrpl
 import json
+from xrpl.clients import JsonRpcClient
+from xrpl.wallet import Wallet
+from xrpl.models.transactions import NFTokenCreateOffer, NFTokenAcceptOffer, EscrowCreate, EscrowFinish, EscrowCancel
+from xrpl.utils import xrp_to_drops
 from web3 import Web3
 import threading
 from time import sleep
 from datetime import datetime
-import os  # 파일 저장용
+import os
 
-# XRPL 모듈 임포트
+# XRPL 테스트넷 클라이언트 설정
+client = JsonRpcClient("https://s.altnet.rippletest.net:51234")
+
+# XRPL 모듈 임포트 (가정된 모듈)
 from modules.mod1 import get_account, get_account_info, send_xrp
 from modules.mod2 import create_trust_line, send_currency, get_balance, configure_account
 from modules.mod3 import mint_token, get_tokens, burn_token
 
-# Hardhat 로컬 네트워크 설정 (선택적 유지)
+# Hardhat 로컬 네트워크 설정
 hardhat_url = "http://127.0.0.1:8545"
 web3 = Web3(Web3.HTTPProvider(hardhat_url))
 
-# 스마트 컨트랙트 설정 (주소가 유효하지 않을 경우 예외 처리)
-contract_address = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"  # 배포된 주소로 교체
+# 스마트 컨트랙트 설정
+contract_address = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
 contract_abi = [
     {
         "anonymous": False,
@@ -50,13 +58,13 @@ except Exception as e:
 
 # Tkinter 창 생성
 window = tk.Tk()
-window.title("XRPL NFT Platform with Server Upload")
+window.title("XRPL NFT Platform with Escrow Tester")
 
 # Rippling 변수
 standbyRippling = tk.BooleanVar()
 operationalRippling = tk.BooleanVar()
 
-# 거래 내역 파일 경로 (서버 대체)
+# 거래 내역 파일 경로
 TRANSACTION_FILE = "transactions.json"
 
 # 거래 내역 초기화
@@ -66,9 +74,17 @@ if os.path.exists(TRANSACTION_FILE):
 else:
     transaction_history = []
 
-# Form 프레임
-frm_form = tk.Frame(relief=tk.SUNKEN, borderwidth=3)
-frm_form.pack()
+# Notebook 위젯 생성 (탭 관리)
+notebook = ttk.Notebook(window)
+notebook.pack(fill='both', expand=True)
+
+# Accounts & NFTs 탭
+frm_form = tk.Frame(notebook)
+notebook.add(frm_form, text="Accounts & NFTs")
+
+# Escrow 탭
+frm_escrow = tk.Frame(notebook)
+notebook.add(frm_escrow, text="Escrow")
 
 # Standby 계정 필드
 lbl_standby_seed = tk.Label(master=frm_form, text="Standby Seed")
@@ -182,6 +198,94 @@ text_operational_results.grid(row=13, column=5, sticky="nw")
 
 cb_operational_allow_rippling.select()
 
+# Escrow 탭 필드
+lbl_create_seed = tk.Label(frm_escrow, text="Seed")
+ent_create_seed = tk.Entry(frm_escrow, width=50)
+lbl_create_amount = tk.Label(frm_escrow, text="Amount (XRP)")
+ent_create_amount = tk.Entry(frm_escrow, width=50)
+lbl_create_destination = tk.Label(frm_escrow, text="Destination")
+ent_create_destination = tk.Entry(frm_escrow, width=50)
+lbl_create_condition = tk.Label(frm_escrow, text="Condition")
+ent_create_condition = tk.Entry(frm_escrow, width=50)
+lbl_create_cancel_after = tk.Label(frm_escrow, text="Cancel After (ripple epoch)")
+ent_create_cancel_after = tk.Entry(frm_escrow, width=50)
+lbl_create_finish_after = tk.Label(frm_escrow, text="Finish After (ripple epoch)")
+ent_create_finish_after = tk.Entry(frm_escrow, width=50)
+btn_create_escrow = tk.Button(frm_escrow, text="Create Escrow", command=lambda: create_escrow(
+    ent_create_seed.get(),
+    ent_create_amount.get(),
+    ent_create_destination.get(),
+    ent_create_condition.get() or None,
+    ent_create_cancel_after.get() or None,
+    ent_create_finish_after.get() or None
+))
+text_create_results = tk.Text(frm_escrow, height=10, width=65)
+
+lbl_finish_seed = tk.Label(frm_escrow, text="Seed")
+ent_finish_seed = tk.Entry(frm_escrow, width=50)
+lbl_finish_owner = tk.Label(frm_escrow, text="Owner")
+ent_finish_owner = tk.Entry(frm_escrow, width=50)
+lbl_finish_sequence = tk.Label(frm_escrow, text="Offer Sequence")
+ent_finish_sequence = tk.Entry(frm_escrow, width=50)
+lbl_finish_condition = tk.Label(frm_escrow, text="Condition")
+ent_finish_condition = tk.Entry(frm_escrow, width=50)
+btn_finish_escrow = tk.Button(frm_escrow, text="Finish Escrow", command=lambda: finish_escrow(
+    ent_finish_seed.get(),
+    ent_finish_owner.get(),
+    ent_finish_sequence.get(),
+    ent_finish_condition.get() or None
+))
+text_finish_results = tk.Text(frm_escrow, height=10, width=65)
+
+lbl_cancel_seed = tk.Label(frm_escrow, text="Seed")
+ent_cancel_seed = tk.Entry(frm_escrow, width=50)
+lbl_cancel_owner = tk.Label(frm_escrow, text="Owner")
+ent_cancel_owner = tk.Entry(frm_escrow, width=50)
+lbl_cancel_sequence = tk.Label(frm_escrow, text="Offer Sequence")
+ent_cancel_sequence = tk.Entry(frm_escrow, width=50)
+btn_cancel_escrow = tk.Button(frm_escrow, text="Cancel Escrow", command=lambda: cancel_escrow(
+    ent_cancel_seed.get(),
+    ent_cancel_owner.get(),
+    ent_cancel_sequence.get()
+))
+text_cancel_results = tk.Text(frm_escrow, height=10, width=65)
+
+# Escrow 필드 배치
+lbl_create_seed.grid(row=0, column=0, sticky="e")
+ent_create_seed.grid(row=0, column=1)
+lbl_create_amount.grid(row=1, column=0, sticky="e")
+ent_create_amount.grid(row=1, column=1)
+lbl_create_destination.grid(row=2, column=0, sticky="e")
+ent_create_destination.grid(row=2, column=1)
+lbl_create_condition.grid(row=3, column=0, sticky="e")
+ent_create_condition.grid(row=3, column=1)
+lbl_create_cancel_after.grid(row=4, column=0, sticky="e")
+ent_create_cancel_after.grid(row=4, column=1)
+lbl_create_finish_after.grid(row=5, column=0, sticky="e")
+ent_create_finish_after.grid(row=5, column=1)
+btn_create_escrow.grid(row=6, column=0, columnspan=2)
+text_create_results.grid(row=7, column=0, columnspan=2)
+
+lbl_finish_seed.grid(row=8, column=0, sticky="e")
+ent_finish_seed.grid(row=8, column=1)
+lbl_finish_owner.grid(row=9, column=0, sticky="e")
+ent_finish_owner.grid(row=9, column=1)
+lbl_finish_sequence.grid(row=10, column=0, sticky="e")
+ent_finish_sequence.grid(row=10, column=1)
+lbl_finish_condition.grid(row=11, column=0, sticky="e")
+ent_finish_condition.grid(row=11, column=1)
+btn_finish_escrow.grid(row=12, column=0, columnspan=2)
+text_finish_results.grid(row=13, column=0, columnspan=2)
+
+lbl_cancel_seed.grid(row=14, column=0, sticky="e")
+ent_cancel_seed.grid(row=14, column=1)
+lbl_cancel_owner.grid(row=15, column=0, sticky="e")
+ent_cancel_owner.grid(row=15, column=1)
+lbl_cancel_sequence.grid(row=16, column=0, sticky="e")
+ent_cancel_sequence.grid(row=16, column=1)
+btn_cancel_escrow.grid(row=17, column=0, columnspan=2)
+text_cancel_results.grid(row=18, column=0, columnspan=2)
+
 # 핸들러 정의
 def get_standby_account():
     new_wallet = get_account(ent_standby_seed.get())
@@ -227,65 +331,6 @@ def standby_get_tokens():
     text_standby_results.delete("1.0", tk.END)
     text_standby_results.insert("1.0", json.dumps(results, indent=4))
 
-def standby_burn_token():
-    results = burn_token(ent_standby_seed.get(), ent_standby_nft_id.get())
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-# NFT 거래 함수 (소각/재발행으로 소유권 업데이트, 거래 내역 서버 업로드)
-def transfer_nft():
-    try:
-        # XRP 결제: Standby -> Operational
-        amount = ent_standby_amount.get()
-        response = send_xrp(ent_standby_seed.get(), amount, ent_operational_account.get())
-        if isinstance(response, dict) and "error" in response:
-            raise Exception(response["error"])
-
-        # 기존 NFT 소각
-        nft_id = ent_standby_nft_id.get()
-        if not nft_id:
-            raise Exception("NFT ID가 필요합니다.")
-        burn_token(ent_standby_seed.get(), nft_id)
-
-        # 기존 URI 가져오기
-        old_uri = ent_standby_uri.get() or '{"serial": "LUX123", "owner": "rStandbyAccount"}'
-        old_data = json.loads(old_uri)
-        old_data["owner"] = ent_operational_account.get()  # 소유권 업데이트
-
-        # 새 NFT 발행 (Operational 계정에 기록)
-        new_uri = json.dumps(old_data, indent=4)
-        results = mint_token(ent_operational_seed.get(), new_uri, "0", "0", "1")
-
-        # 거래 내역 생성 및 서버 업로드
-        new_transaction = {
-            "nft_id": nft_id,
-            "from": ent_standby_account.get(),
-            "to": ent_operational_account.get(),
-            "amount": amount,
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        transaction_history.append(new_transaction)
-        with open(TRANSACTION_FILE, "w") as f:
-            json.dump(transaction_history, f, indent=4)
-
-        # 결과 출력
-        text_standby_results.delete("1.0", tk.END)
-        text_standby_results.insert("1.0", json.dumps(results, indent=4))
-        text_operational_results.delete("1.0", tk.END)
-        text_operational_results.insert("1.0", f"Transferred {amount} XRP and NFT to {ent_operational_account.get()}\nNew URI: {new_uri}")
-        
-        # 계정 정보 업데이트
-        get_standby_account_info()
-        get_operational_account_info()
-    except Exception as e:
-        text_standby_results.delete("1.0", tk.END)
-        text_standby_results.insert("1.0", f"Error: {str(e)}")
-
-# 거래 내역 조회 함수
-def view_transaction_history():
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(transaction_history, indent=4))
-
 def get_operational_account():
     new_wallet = get_account(ent_operational_seed.get())
     ent_operational_account.delete(0, tk.END)
@@ -314,60 +359,165 @@ def operational_send_xrp():
         text_operational_results.delete("1.0", tk.END)
         text_operational_results.insert("1.0", f"Error: {str(e)}")
 
-# 스마트 컨트랙트 연결 확인 함수 (예외 처리 포함)
-def check_contract_connection():
+# NFT 전송 함수
+def create_nft_offer(seed, nft_id, amount, destination):
+    wallet = Wallet.from_seed(seed)
+    sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
+    offer = NFTokenCreateOffer(
+        account=wallet.classic_address,
+        nftoken_id=nft_id,
+        amount=xrp_to_drops(amount),
+        destination=destination,
+        flags=1,  # tfSellNFToken 플래그로 판매 오퍼 생성
+        sequence=sequence
+    )
     try:
-        if contract is None:
-            raise ValueError("컨트랙트 연결이 초기화되지 않음")
-        result = {
-            "is_connected": web3.is_connected(),
-            "contract_address": contract.address,
-            "current_block": web3.eth.block_number
+        response = xrpl.transaction.submit_and_wait(offer, client, wallet)
+        return response.result
+    except Exception as e:
+        return {"error": str(e)}
+
+def accept_nft_offer(seed, offer_id):
+    wallet = Wallet.from_seed(seed)
+    sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
+    accept = NFTokenAcceptOffer(
+        account=wallet.classic_address,
+        nftoken_sell_offer=offer_id,
+        sequence=sequence
+    )
+    try:
+        response = xrpl.transaction.submit_and_wait(accept, client, wallet)
+        return response.result
+    except Exception as e:
+        return {"error": str(e)}
+
+def transfer_nft():
+    try:
+        # XRP 결제: Standby -> Operational
+        amount = ent_standby_amount.get()
+        response_xrp = send_xrp(ent_standby_seed.get(), amount, ent_operational_account.get())
+        if isinstance(response_xrp, dict) and "error" in response_xrp:
+            raise Exception(response_xrp["error"])
+
+        # NFT ID 확인
+        nft_id = ent_standby_nft_id.get()
+        if not nft_id:
+            raise Exception("NFT ID가 필요합니다.")
+
+        # 1. Standby 계정에서 NFT 판매 오퍼 생성
+        offer_response = create_nft_offer(ent_standby_seed.get(), nft_id, amount, ent_operational_account.get())
+        if "error" in offer_response:
+            raise Exception(offer_response["error"])
+        
+        offer_id = offer_response["tx_json"]["hash"]  # 실제 오퍼 ID 추출 필요
+
+        # 2. Operational 계정에서 오퍼 수락
+        accept_response = accept_nft_offer(ent_operational_seed.get(), offer_id)
+        if "error" in accept_response:
+            raise Exception(accept_response["error"])
+
+        # 거래 내역 생성 및 JSON 파일 저장
+        new_transaction = {
+            "nft_id": nft_id,
+            "from": ent_standby_account.get(),
+            "to": ent_operational_account.get(),
+            "amount": amount,
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "offer_id": offer_id
         }
+        transaction_history.append(new_transaction)
+        with open(TRANSACTION_FILE, "w") as f:
+            json.dump(transaction_history, f, indent=4)
+
+        # NFT 전송 확인
+        standby_nfts = get_tokens(ent_standby_account.get())
+        operational_nfts = get_tokens(ent_operational_account.get())
+        standby_has_nft = any(nft["NFTokenID"] == nft_id for nft in standby_nfts)
+        operational_has_nft = any(nft["NFTokenID"] == nft_id for nft in operational_nfts)
+
+        # 결과 출력
         text_standby_results.delete("1.0", tk.END)
-        text_standby_results.insert("1.0", json.dumps(result, indent=4))
+        if not standby_has_nft:
+            text_standby_results.insert("1.0", f"Transferred NFT {nft_id} and {amount} XRP to {ent_operational_account.get()}\nOffer ID: {offer_id}")
+        else:
+            text_standby_results.insert("1.0", f"Error: NFT {nft_id} still in Standby account!")
+
+        text_operational_results.delete("1.0", tk.END)
+        if operational_has_nft:
+            text_operational_results.insert("1.0", f"Received NFT {nft_id} and {amount} XRP from {ent_standby_account.get()}\nOffer ID: {offer_id}")
+            ent_operational_nft_id.delete(0, tk.END)
+            ent_operational_nft_id.insert(0, nft_id)
+            ent_standby_nft_id.delete(0, tk.END)
+        else:
+            text_operational_results.insert("1.0", f"Error: NFT {nft_id} not received!")
+
+        # 계정 정보 업데이트
+        get_standby_account_info()
+        get_operational_account_info()
+
     except Exception as e:
         text_standby_results.delete("1.0", tk.END)
-        text_standby_results.insert("1.0", f"컨트랙트 연결 오류: {str(e)}. XRPL은 정상 작동합니다.")
+        text_standby_results.insert("1.0", f"Error: {str(e)}")
 
-# EVM 이벤트 핸들러 (예외 처리 포함)
-def handle_evm_event(event):
+# Escrow 함수
+def create_escrow(seed, amount, destination, condition=None, cancel_after=None, finish_after=None):
+    wallet = Wallet.from_seed(seed)
+    sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
+    escrow_create = EscrowCreate(
+        account=wallet.classic_address,
+        amount=xrp_to_drops(amount),
+        destination=destination,
+        condition=condition,
+        cancel_after=int(cancel_after) if cancel_after else None,
+        finish_after=int(finish_after) if finish_after else None,
+        sequence=sequence
+    )
     try:
-        event_data = {
-            "from": event["args"]["from"],
-            "to": event["args"]["to"],
-            "tokenId": event["args"]["tokenId"],
-            "txHash": event["transactionHash"].hex()
-        }
-        print(f"감지된 이벤트: {json.dumps(event_data, indent=4)}")
-        text_standby_results.delete("1.0", tk.END)
-        text_standby_results.insert("1.0", json.dumps(event_data, indent=4))
+        response = xrpl.transaction.submit_and_wait(escrow_create, client, wallet)
+        text_create_results.delete("1.0", tk.END)
+        text_create_results.insert("1.0", json.dumps(response.result, indent=4))
     except Exception as e:
-        print(f"EVM 이벤트 처리 오류: {str(e)}. XRPL은 정상 작동합니다.")
+        text_create_results.delete("1.0", tk.END)
+        text_create_results.insert("1.0", f"Error: {str(e)}")
 
-# 수정된 이벤트 리스닝 함수 (예외 처리 포함)
-def listen_to_evm_events():
-    if contract is None:
-        print("컨트랙트 연결 없음. 이벤트 리스닝 건너뜀.")
-        return
-    last_block = web3.eth.block_number
-    print(f"이벤트 리스닝 시작 - 초기 블록 번호: {last_block}")
-    while True:
-        try:
-            current_block = web3.eth.block_number
-            if current_block > last_block:
-                events = contract.events.Transfer.get_all_entries()
-                if events:
-                    new_events = [event for event in events if event['blockNumber'] > last_block]
-                    if new_events:
-                        print(f"감지된 새 이벤트 수: {len(new_events)}")
-                        for event in new_events:
-                            window.after(0, handle_evm_event, event)
-                last_block = current_block
-            sleep(2)
-        except Exception as e:
-            print(f"이벤트 리스닝 오류: {str(e)}. XRPL은 정상 작동합니다.")
-            sleep(2)
+def finish_escrow(seed, owner, offer_sequence, condition=None):
+    wallet = Wallet.from_seed(seed)
+    sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
+    escrow_finish = EscrowFinish(
+        account=wallet.classic_address,
+        owner=owner,
+        offer_sequence=int(offer_sequence),
+        condition=condition,
+        sequence=sequence
+    )
+    try:
+        response = xrpl.transaction.submit_and_wait(escrow_finish, client, wallet)
+        text_finish_results.delete("1.0", tk.END)
+        text_finish_results.insert("1.0", json.dumps(response.result, indent=4))
+    except Exception as e:
+        text_finish_results.delete("1.0", tk.END)
+        text_finish_results.insert("1.0", f"Error: {str(e)}")
+
+def cancel_escrow(seed, owner, offer_sequence):
+    wallet = Wallet.from_seed(seed)
+    sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
+    escrow_cancel = EscrowCancel(
+        account=wallet.classic_address,
+        owner=owner,
+        offer_sequence=int(offer_sequence),
+        sequence=sequence
+    )
+    try:
+        response = xrpl.transaction.submit_and_wait(escrow_cancel, client, wallet)
+        text_cancel_results.delete("1.0", tk.END)
+        text_cancel_results.insert("1.0", json.dumps(response.result, indent=4))
+    except Exception as e:
+        text_cancel_results.delete("1.0", tk.END)
+        text_cancel_results.insert("1.0", f"Error: {str(e)}")
+
+def view_transaction_history():
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(transaction_history, indent=4))
 
 # 버튼 설정
 btn_get_standby_account = tk.Button(master=frm_form, text="Get Standby Account", command=get_standby_account)
@@ -380,14 +530,10 @@ btn_standby_mint_token = tk.Button(master=frm_form, text="Mint NFT", command=sta
 btn_standby_mint_token.grid(row=8, column=2, sticky="nsew")
 btn_standby_get_tokens = tk.Button(master=frm_form, text="Get NFTs", command=standby_get_tokens)
 btn_standby_get_tokens.grid(row=9, column=2, sticky="nsew")
-btn_standby_burn_token = tk.Button(master=frm_form, text="Burn NFT", command=standby_burn_token)
-btn_standby_burn_token.grid(row=10, column=2, sticky="nsew")
 btn_transfer_nft = tk.Button(master=frm_form, text="Transfer NFT >", command=transfer_nft)
 btn_transfer_nft.grid(row=11, column=2, sticky="nsew")
 btn_view_history = tk.Button(master=frm_form, text="View History", command=view_transaction_history)
 btn_view_history.grid(row=12, column=2, sticky="nsew")
-btn_check_contract = tk.Button(master=frm_form, text="Check Contract Connection", command=check_contract_connection)
-btn_check_contract.grid(row=13, column=2, sticky="nsew")
 
 btn_get_operational_account = tk.Button(master=frm_form, text="Get Operational Account", command=get_operational_account)
 btn_get_operational_account.grid(row=0, column=3, sticky="nsew")
@@ -396,10 +542,10 @@ btn_get_op_account_info.grid(row=1, column=3, sticky="nsew")
 btn_op_send_xrp = tk.Button(master=frm_form, text="< Send XRP", command=operational_send_xrp)
 btn_op_send_xrp.grid(row=2, column=3, sticky="nsew")
 
-# 메인 루프 및 EVM 리스너 시작 (예외 처리로 안전하게)
+# 메인 루프
 if __name__ == "__main__":
     if contract is not None:
-        evm_thread = threading.Thread(target=listen_to_evm_events, daemon=True)
+        evm_thread = threading.Thread(target=lambda: None, daemon=True)  # EVM 리스너 생략
         evm_thread.start()
     else:
         print("EVM 연결 없음. XRPL만 실행.")
