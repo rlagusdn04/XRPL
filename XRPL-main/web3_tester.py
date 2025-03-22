@@ -18,32 +18,39 @@ from modules.mod3 import (
     get_tokens,
     burn_token,
 )
-from modules.mod4 import (
-    create_sell_offer,
-    create_buy_offer,
-    get_offers,
-    cancel_offer,
-    accept_sell_offer,
-    accept_buy_offer,
-)
 
-# EVM 설정
-infura_url = "https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID"  # Infura URL (프로젝트 ID 필요)
-web3 = Web3(Web3.HTTPProvider(infura_url))
-contract_address = "0xYourContractAddress"  # 스마트 컨트랙트 주소 (사용자 지정 필요)
+# Hardhat 로컬 네트워크 RPC URL 설정
+hardhat_url = "http://127.0.0.1:8545"  # Hardhat 노드 기본 URL
+
+# Web3 인스턴스 초기화
+web3 = Web3(Web3.HTTPProvider(hardhat_url))
+
+# Hardhat 로컬 네트워크에 배포된 스마트 컨트랙트 주소
+# Hardhat 배포 후 얻은 주소를 여기에 입력하세요
+contract_address = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+
+# 컨트랙트 ABI (OwnershipTransferred 이벤트 포함)
 contract_abi = [
-    {"anonymous": False, "inputs": [
-        {"indexed": True, "name": "from", "type": "address"},
-        {"indexed": True, "name": "to", "type": "address"},
-        {"indexed": False, "name": "tokenId", "type": "uint256"},
-        {"indexed": False, "name": "assetId", "type": "string"}
-    ], "name": "OwnershipTransferred", "type": "event"}
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "name": "from", "type": "address"},
+            {"indexed": True, "name": "to", "type": "address"},
+            {"indexed": False, "name": "tokenId", "type": "uint256"},
+            {"indexed": False, "name": "assetId", "type": "string"}
+        ],
+        "name": "OwnershipTransferred",
+        "type": "event"
+    }
 ]
 contract = web3.eth.contract(address=contract_address, abi=contract_abi)
 
+# 연결 확인 (선택 사항)
+print("Web3 연결 상태:", web3.is_connected())
+
 # Tkinter 창 생성
 window = tk.Tk()
-window.title("Quickstart Module 4")
+window.title("Quickstart Module")
 
 # Rippling 변수
 standbyRippling = tk.BooleanVar()
@@ -54,11 +61,11 @@ frm_form = tk.Frame(relief=tk.SUNKEN, borderwidth=3)
 frm_form.pack()
 
 # Standby 계정 필드
-lbl_standy_seed = tk.Label(master=frm_form, text="Standby Seed")
+lbl_standby_seed = tk.Label(master=frm_form, text="Standby Seed")
 ent_standby_seed = tk.Entry(master=frm_form, width=50)
 lbl_standby_account = tk.Label(master=frm_form, text="Standby Account")
 ent_standby_account = tk.Entry(master=frm_form, width=50)
-lbl_standy_amount = tk.Label(master=frm_form, text="Amount")
+lbl_standby_amount = tk.Label(master=frm_form, text="Amount")
 ent_standby_amount = tk.Entry(master=frm_form, width=50)
 lbl_standby_destination = tk.Label(master=frm_form, text="Destination")
 ent_standby_destination = tk.Entry(master=frm_form, width=50)
@@ -77,21 +84,15 @@ lbl_standby_taxon = tk.Label(master=frm_form, text="Taxon")
 ent_standby_taxon = tk.Entry(master=frm_form, width=50)
 lbl_standby_nft_id = tk.Label(master=frm_form, text="NFT ID")
 ent_standby_nft_id = tk.Entry(master=frm_form, width=50)
-lbl_standby_nft_offer_index = tk.Label(master=frm_form, text="NFT Offer Index")
-ent_standby_nft_offer_index = tk.Entry(master=frm_form, width=50)
-lbl_standby_owner = tk.Label(master=frm_form, text="Owner")
-ent_standby_owner = tk.Entry(master=frm_form, width=50)
-lbl_standby_expiration = tk.Label(master=frm_form, text="Expiration")
-ent_standby_expiration = tk.Entry(master=frm_form, width=50)
 lbl_standby_results = tk.Label(master=frm_form, text='Results')
 text_standby_results = tk.Text(master=frm_form, height=20, width=65)
 
-# Standby 필드 배치
-lbl_standy_seed.grid(row=0, column=0, sticky="w")
+# Standby 필드 배치 (mod4 관련 필드 제거)
+lbl_standby_seed.grid(row=0, column=0, sticky="w")
 ent_standby_seed.grid(row=0, column=1)
 lbl_standby_account.grid(row=2, column=0, sticky="e")
 ent_standby_account.grid(row=2, column=1)
-lbl_standy_amount.grid(row=3, column=0, sticky="e")
+lbl_standby_amount.grid(row=3, column=0, sticky="e")
 ent_standby_amount.grid(row=3, column=1)
 lbl_standby_destination.grid(row=4, column=0, sticky="e")
 ent_standby_destination.grid(row=4, column=1)
@@ -110,18 +111,12 @@ lbl_standby_taxon.grid(row=11, column=0, sticky="e")
 ent_standby_taxon.grid(row=11, column=1, sticky="w")
 lbl_standby_nft_id.grid(row=12, column=0, sticky="e")
 ent_standby_nft_id.grid(row=12, column=1, sticky="w")
-lbl_standby_nft_offer_index.grid(row=13, column=0, sticky="ne")
-ent_standby_nft_offer_index.grid(row=13, column=1, sticky="w")
-lbl_standby_owner.grid(row=14, column=0, sticky="ne")
-ent_standby_owner.grid(row=14, column=1, sticky="w")
-lbl_standby_expiration.grid(row=15, column=0, sticky="ne")
-ent_standby_expiration.grid(row=15, column=1, sticky="w")
-lbl_standby_results.grid(row=17, column=0, sticky="ne")
-text_standby_results.grid(row=17, column=1, sticky="nw")
+lbl_standby_results.grid(row=13, column=0, sticky="ne")
+text_standby_results.grid(row=13, column=1, sticky="nw")
 
 cb_standby_allow_rippling.select()
 
-# Operational 계정 필드
+# Operational 계정 필드 (mod4 관련 필드 제거)
 lbl_operational_seed = tk.Label(master=frm_form, text="Operational Seed")
 ent_operational_seed = tk.Entry(master=frm_form, width=50)
 lbl_operational_account = tk.Label(master=frm_form, text="Operational Account")
@@ -145,12 +140,6 @@ lbl_operational_taxon = tk.Label(master=frm_form, text="Taxon")
 ent_operational_taxon = tk.Entry(master=frm_form, width=50)
 lbl_operational_nft_id = tk.Label(master=frm_form, text="NFT ID")
 ent_operational_nft_id = tk.Entry(master=frm_form, width=50)
-lbl_operational_nft_offer_index = tk.Label(master=frm_form, text="NFT Offer Index")
-ent_operational_nft_offer_index = tk.Entry(master=frm_form, width=50)
-lbl_operational_owner = tk.Label(master=frm_form, text="Owner")
-ent_operational_owner = tk.Entry(master=frm_form, width=50)
-lbl_operational_expiration = tk.Label(master=frm_form, text="Expiration")
-ent_operational_expiration = tk.Entry(master=frm_form, width=50)
 lbl_operational_results = tk.Label(master=frm_form, text="Results")
 text_operational_results = tk.Text(master=frm_form, height=20, width=65)
 
@@ -178,123 +167,12 @@ lbl_operational_taxon.grid(row=11, column=4, sticky="e")
 ent_operational_taxon.grid(row=11, column=5, sticky="w")
 lbl_operational_nft_id.grid(row=12, column=4, sticky="e")
 ent_operational_nft_id.grid(row=12, column=5, sticky="w")
-lbl_operational_nft_offer_index.grid(row=13, column=4, sticky="ne")
-ent_operational_nft_offer_index.grid(row=13, column=5, sticky="w")
-lbl_operational_owner.grid(row=14, column=4, sticky="ne")
-ent_operational_owner.grid(row=14, column=5, sticky="w")
-lbl_operational_expiration.grid(row=15, column=4, sticky="ne")
-ent_operational_expiration.grid(row=15, column=5, sticky="w")
-lbl_operational_results.grid(row=17, column=4, sticky="ne")
-text_operational_results.grid(row=17, column=5, sticky="nw")
+lbl_operational_results.grid(row=13, column=4, sticky="ne")
+text_operational_results.grid(row=13, column=5, sticky="nw")
 
 cb_operational_allow_rippling.select()
 
-# 핸들러 정의
-## Module 4 핸들러
-def standby_create_sell_offer():
-    results = create_sell_offer(
-        ent_standby_seed.get(),
-        ent_standby_amount.get(),
-        ent_standby_nft_id.get(),
-        ent_standby_expiration.get(),
-        ent_standby_destination.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def standby_accept_sell_offer():
-    results = accept_sell_offer(
-        ent_standby_seed.get(),
-        ent_standby_nft_offer_index.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def standby_create_buy_offer():
-    results = create_buy_offer(
-        ent_standby_seed.get(),
-        ent_standby_amount.get(),
-        ent_standby_nft_id.get(),
-        ent_standby_owner.get(),
-        ent_standby_expiration.get(),
-        ent_standby_destination.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def standby_accept_buy_offer():
-    results = accept_buy_offer(
-        ent_standby_seed.get(),
-        ent_standby_nft_offer_index.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def standby_get_offers():
-    results = get_offers(ent_standby_nft_id.get())
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", results)
-
-def standby_cancel_offer():
-    results = cancel_offer(
-        ent_standby_seed.get(),
-        ent_standby_nft_offer_index.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def op_create_sell_offer():
-    results = create_sell_offer(
-        ent_operational_seed.get(),
-        ent_operational_amount.get(),
-        ent_operational_nft_id.get(),
-        ent_operational_expiration.get(),
-        ent_operational_destination.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def op_accept_sell_offer():
-    results = accept_sell_offer(
-        ent_operational_seed.get(),
-        ent_operational_nft_offer_index.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def op_create_buy_offer():
-    results = create_buy_offer(
-        ent_operational_seed.get(),
-        ent_operational_amount.get(),
-        ent_operational_nft_id.get(),
-        ent_operational_owner.get(),
-        ent_operational_expiration.get(),
-        ent_operational_destination.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def op_accept_buy_offer():
-    results = accept_buy_offer(
-        ent_operational_seed.get(),
-        ent_operational_nft_offer_index.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def op_get_offers():
-    results = get_offers(ent_operational_nft_id.get())
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", results)
-
-def op_cancel_offer():
-    results = cancel_offer(
-        ent_operational_seed.get(),
-        ent_operational_nft_offer_index.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
+# 핸들러 정의 (mod4 관련 함수 제거)
 ## Module 3 핸들러
 def standby_mint_token():
     results = mint_token(
@@ -485,13 +363,29 @@ def handle_evm_event(event):
         text_standby_results.insert("1.0", f"EVM NFT Mint Error: {str(e)}")
 
 def listen_to_evm_events():
-    event_filter = contract.events.OwnershipTransferred.create_filter(fromBlock='latest')
-    while True:
-        for event in event_filter.get_new_entries():
-            window.after(0, handle_evm_event, event)
-        sleep(2)
+    try:
+        event_filter = contract.events.OwnershipTransferred.createFilter(fromBlock='latest')
+        print("이벤트 필터 생성 완료:", event_filter)
+        while True:
+            events = event_filter.get_new_entries()
+            if events:
+                print(f"감지된 이벤트 수: {len(events)}")
+                for event in events:
+                    window.after(0, handle_evm_event, event)
+            sleep(2)
+    except Exception as e:
+        print(f"이벤트 리스닝 오류: {str(e)}")
 
-# 버튼 설정
+# 스마트 컨트랙트 연결 확인 함수
+def check_contract_connection():
+    result = {}
+    result["is_connected"] = web3.is_connected()
+    result["contract_address"] = contract.address
+    result["current_block"] = web3.eth.block_number
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(result, indent=4))
+
+# 버튼 설정 (mod4 버튼 제거, 연결 확인 버튼 추가)
 btn_get_standby_account = tk.Button(master=frm_form, text="Get Standby Account", command=get_standby_account)
 btn_get_standby_account.grid(row=0, column=2, sticky="nsew")
 btn_get_standby_account_info = tk.Button(master=frm_form, text="Get Standby Account Info", command=get_standby_account_info)
@@ -512,18 +406,6 @@ btn_standby_get_tokens = tk.Button(master=frm_form, text="Get NFTs", command=sta
 btn_standby_get_tokens.grid(row=9, column=2, sticky="nsew")
 btn_standby_burn_token = tk.Button(master=frm_form, text="Burn NFT", command=standby_burn_token)
 btn_standby_burn_token.grid(row=10, column=2, sticky="nsew")
-btn_standby_create_sell_offer = tk.Button(master=frm_form, text="Create Sell Offer", command=standby_create_sell_offer)
-btn_standby_create_sell_offer.grid(row=11, column=2, sticky="nsew")
-btn_standby_accept_sell_offer = tk.Button(master=frm_form, text="Accept Sell Offer", command=standby_accept_sell_offer)
-btn_standby_accept_sell_offer.grid(row=12, column=2, sticky="nsew")
-btn_standby_create_buy_offer = tk.Button(master=frm_form, text="Create Buy Offer", command=standby_create_buy_offer)
-btn_standby_create_buy_offer.grid(row=13, column=2, sticky="nsew")
-btn_standby_accept_buy_offer = tk.Button(master=frm_form, text="Accept Buy Offer", command=standby_accept_buy_offer)
-btn_standby_accept_buy_offer.grid(row=14, column=2, sticky="nsew")
-btn_standby_get_offers = tk.Button(master=frm_form, text="Get Offers", command=standby_get_offers)
-btn_standby_get_offers.grid(row=15, column=2, sticky="nsew")
-btn_standby_cancel_offer = tk.Button(master=frm_form, text="Cancel Offer", command=standby_cancel_offer)
-btn_standby_cancel_offer.grid(row=16, column=2, sticky="nsew")
 
 btn_get_operational_account = tk.Button(master=frm_form, text="Get Operational Account", command=get_operational_account)
 btn_get_operational_account.grid(row=0, column=3, sticky="nsew")
@@ -545,18 +427,10 @@ btn_op_get_tokens = tk.Button(master=frm_form, text="Get NFTs", command=operatio
 btn_op_get_tokens.grid(row=9, column=3, sticky="nsew")
 btn_op_burn_token = tk.Button(master=frm_form, text="Burn NFT", command=operational_burn_token)
 btn_op_burn_token.grid(row=10, column=3, sticky="nsew")
-btn_op_create_sell_offer = tk.Button(master=frm_form, text="Create Sell Offer", command=op_create_sell_offer)
-btn_op_create_sell_offer.grid(row=11, column=3, sticky="nsew")
-btn_op_accept_sell_offer = tk.Button(master=frm_form, text="Accept Sell Offer", command=op_accept_sell_offer)
-btn_op_accept_sell_offer.grid(row=12, column=3, sticky="nsew")
-btn_op_create_buy_offer = tk.Button(master=frm_form, text="Create Buy Offer", command=op_create_buy_offer)
-btn_op_create_buy_offer.grid(row=13, column=3, sticky="nsew")
-btn_op_accept_buy_offer = tk.Button(master=frm_form, text="Accept Buy Offer", command=op_accept_buy_offer)
-btn_op_accept_buy_offer.grid(row=14, column=3, sticky="nsew")
-btn_op_get_offers = tk.Button(master=frm_form, text="Get Offers", command=op_get_offers)
-btn_op_get_offers.grid(row=15, column=3, sticky="nsew")
-btn_op_cancel_offer = tk.Button(master=frm_form, text="Cancel Offer", command=op_cancel_offer)
-btn_op_cancel_offer.grid(row=16, column=3, sticky="nsew")
+
+# 스마트 컨트랙트 연결 확인 버튼 추가
+btn_check_contract = tk.Button(master=frm_form, text="Check Contract Connection", command=check_contract_connection)
+btn_check_contract.grid(row=11, column=2, columnspan=2, sticky="nsew")
 
 # 메인 루프 및 EVM 리스너 시작
 if __name__ == "__main__":
