@@ -8,14 +8,14 @@ from xrpl.models.transactions import NFTokenCreateOffer, NFTokenAcceptOffer, Esc
 from xrpl.utils import xrp_to_drops
 from web3 import Web3
 import threading
-from time import sleep
 from datetime import datetime
 import os
 
-# XRPL 테스트넷 클라이언트 설정
-client = JsonRpcClient("https://s.altnet.rippletest.net:51234")
+# XRPL 테스트넷 URL
+testnet_url = "https://s.devnet.rippletest.net:51234"
+client = JsonRpcClient(testnet_url)
 
-# XRPL 모듈 임포트 (가정된 모듈)
+# XRPL 모듈 임포트
 from modules.mod1 import get_account, get_account_info, send_xrp
 from modules.mod2 import create_trust_line, send_currency, get_balance, configure_account
 from modules.mod3 import mint_token, get_tokens, burn_token
@@ -286,6 +286,18 @@ ent_cancel_sequence.grid(row=16, column=1)
 btn_cancel_escrow.grid(row=17, column=0, columnspan=2)
 text_cancel_results.grid(row=18, column=0, columnspan=2)
 
+# 잔액 확인 헬퍼 함수
+def check_balance(seed, amount):
+    wallet = Wallet.from_seed(seed)
+    account_info = get_account_info(wallet.classic_address)
+    balance = float(account_info["Balance"]) / 1_000_000  # drops -> XRP
+    amount = float(amount) if amount else 0
+    reserve = 10  # 최소 예비금 10 XRP
+    fee = 0.00001  # 트랜잭션 수수료 약 10 drops
+    if balance < reserve + amount + fee:
+        raise Exception(f"Insufficient balance: {balance} XRP (required: {reserve + amount + fee} XRP)")
+    return True
+
 # 핸들러 정의
 def get_standby_account():
     new_wallet = get_account(ent_standby_seed.get())
@@ -295,18 +307,23 @@ def get_standby_account():
     ent_standby_seed.insert(0, new_wallet.seed)
 
 def get_standby_account_info():
-    accountInfo = get_account_info(ent_standby_account.get())
+    account_info = get_account_info(ent_standby_account.get())
     ent_standby_balance.delete(0, tk.END)
-    ent_standby_balance.insert(0, accountInfo['Balance'])
+    ent_standby_balance.insert(0, str(float(account_info['Balance']) / 1_000_000))  # drops -> XRP
     text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(accountInfo, indent=4))
+    text_standby_results.insert("1.0", json.dumps(account_info, indent=4))
 
 def standby_send_xrp():
     try:
-        response = send_xrp(ent_standby_seed.get(), ent_standby_amount.get(), ent_standby_destination.get())
+        amount = ent_standby_amount.get()
+        destination = ent_standby_destination.get()
+        if not amount or not destination:
+            raise Exception("Amount and Destination are required.")
+        check_balance(ent_standby_seed.get(), amount)
+        response = send_xrp(ent_standby_seed.get(), amount, destination)
         text_standby_results.delete("1.0", tk.END)
-        if isinstance(response, dict) and "error" in response:
-            text_standby_results.insert("1.0", response["error"])
+        if isinstance(response, str) and "Submit failed" in response:
+            text_standby_results.insert("1.0", response)
         else:
             text_standby_results.insert("1.0", json.dumps(response.result, indent=4))
         get_standby_account_info()
@@ -316,20 +333,32 @@ def standby_send_xrp():
         text_standby_results.insert("1.0", f"Error: {str(e)}")
 
 def standby_mint_token():
-    results = mint_token(
-        ent_standby_seed.get(),
-        ent_standby_uri.get(),
-        ent_standby_flags.get(),
-        ent_standby_transfer_fee.get(),
-        ent_standby_taxon.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+    try:
+        check_balance(ent_standby_seed.get(), 0)  # 수수료만 확인
+        results = mint_token(
+            ent_standby_seed.get(),
+            ent_standby_uri.get(),
+            ent_standby_flags.get() or "0",
+            ent_standby_transfer_fee.get() or "0",
+            ent_standby_taxon.get() or "0"
+        )
+        text_standby_results.delete("1.0", tk.END)
+        if isinstance(results, str) and "Submit failed" in results:
+            text_standby_results.insert("1.0", results)
+        else:
+            text_standby_results.insert("1.0", json.dumps(results, indent=4))
+    except Exception as e:
+        text_standby_results.delete("1.0", tk.END)
+        text_standby_results.insert("1.0", f"Error: {str(e)}")
 
 def standby_get_tokens():
-    results = get_tokens(ent_standby_account.get())
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+    try:
+        results = get_tokens(ent_standby_account.get())
+        text_standby_results.delete("1.0", tk.END)
+        text_standby_results.insert("1.0", json.dumps(results.get("account_nfts", []), indent=4))
+    except Exception as e:
+        text_standby_results.delete("1.0", tk.END)
+        text_standby_results.insert("1.0", f"Error: {str(e)}")
 
 def get_operational_account():
     new_wallet = get_account(ent_operational_seed.get())
@@ -339,18 +368,23 @@ def get_operational_account():
     ent_operational_seed.insert(0, new_wallet.seed)
 
 def get_operational_account_info():
-    accountInfo = get_account_info(ent_operational_account.get())
+    account_info = get_account_info(ent_operational_account.get())
     ent_operational_balance.delete(0, tk.END)
-    ent_operational_balance.insert(0, accountInfo['Balance'])
+    ent_operational_balance.insert(0, str(float(account_info['Balance']) / 1_000_000))  # drops -> XRP
     text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(accountInfo, indent=4))
+    text_operational_results.insert("1.0", json.dumps(account_info, indent=4))
 
 def operational_send_xrp():
     try:
-        response = send_xrp(ent_operational_seed.get(), ent_operational_amount.get(), ent_operational_destination.get())
+        amount = ent_operational_amount.get()
+        destination = ent_operational_destination.get()
+        if not amount or not destination:
+            raise Exception("Amount and Destination are required.")
+        check_balance(ent_operational_seed.get(), amount)
+        response = send_xrp(ent_operational_seed.get(), amount, destination)
         text_operational_results.delete("1.0", tk.END)
-        if isinstance(response, dict) and "error" in response:
-            text_operational_results.insert("1.0", response["error"])
+        if isinstance(response, str) and "Submit failed" in response:
+            text_operational_results.insert("1.0", response)
         else:
             text_operational_results.insert("1.0", json.dumps(response.result, indent=4))
         get_standby_account_info()
@@ -359,23 +393,30 @@ def operational_send_xrp():
         text_operational_results.delete("1.0", tk.END)
         text_operational_results.insert("1.0", f"Error: {str(e)}")
 
-# NFT 전송 함수
-def create_nft_offer(seed, nft_id, amount, destination):
+# NFT 전송 함수 (XRP 이동 없이 소유권만 변경)
+def create_nft_offer(seed, nft_id, destination):
     wallet = Wallet.from_seed(seed)
     sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
     offer = NFTokenCreateOffer(
         account=wallet.classic_address,
         nftoken_id=nft_id,
-        amount=xrp_to_drops(amount),
+        amount="0",  # XRP 이동 없이 무료로 오퍼 생성
         destination=destination,
-        flags=1,  # tfSellNFToken 플래그로 판매 오퍼 생성
+        flags=1,  # tfSellNFToken 플래그
         sequence=sequence
     )
     try:
         response = xrpl.transaction.submit_and_wait(offer, client, wallet)
-        return response.result
+        offer_id = None
+        for node in response.result["meta"]["AffectedNodes"]:
+            if "CreatedNode" in node and node["CreatedNode"]["LedgerEntryType"] == "NFTokenOffer":
+                offer_id = node["CreatedNode"]["LedgerIndex"]
+                break
+        if not offer_id:
+            raise Exception("Failed to extract NFTokenOffer ID")
+        return response.result, offer_id
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e)}, None
 
 def accept_nft_offer(seed, offer_id):
     wallet = Wallet.from_seed(seed)
@@ -393,35 +434,31 @@ def accept_nft_offer(seed, offer_id):
 
 def transfer_nft():
     try:
-        # XRP 결제: Standby -> Operational
-        amount = ent_standby_amount.get()
-        response_xrp = send_xrp(ent_standby_seed.get(), amount, ent_operational_account.get())
-        if isinstance(response_xrp, dict) and "error" in response_xrp:
-            raise Exception(response_xrp["error"])
-
         # NFT ID 확인
         nft_id = ent_standby_nft_id.get()
         if not nft_id:
             raise Exception("NFT ID가 필요합니다.")
+        
+        # 잔액 확인 (수수료만 필요)
+        check_balance(ent_standby_seed.get(), 0)
+        check_balance(ent_operational_seed.get(), 0)
 
-        # 1. Standby 계정에서 NFT 판매 오퍼 생성
-        offer_response = create_nft_offer(ent_standby_seed.get(), nft_id, amount, ent_operational_account.get())
+        # NFT 전송 (amount 제거)
+        offer_response, offer_id = create_nft_offer(ent_standby_seed.get(), nft_id, ent_operational_account.get())
         if "error" in offer_response:
             raise Exception(offer_response["error"])
-        
-        offer_id = offer_response["tx_json"]["hash"]  # 실제 오퍼 ID 추출 필요
+        if not offer_id:
+            raise Exception("Failed to retrieve offer ID")
 
-        # 2. Operational 계정에서 오퍼 수락
         accept_response = accept_nft_offer(ent_operational_seed.get(), offer_id)
         if "error" in accept_response:
             raise Exception(accept_response["error"])
 
-        # 거래 내역 생성 및 JSON 파일 저장
+        # 거래 내역 저장 (amount 필드 제거)
         new_transaction = {
             "nft_id": nft_id,
             "from": ent_standby_account.get(),
             "to": ent_operational_account.get(),
-            "amount": amount,
             "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "offer_id": offer_id
         }
@@ -430,21 +467,21 @@ def transfer_nft():
             json.dump(transaction_history, f, indent=4)
 
         # NFT 전송 확인
-        standby_nfts = get_tokens(ent_standby_account.get())
-        operational_nfts = get_tokens(ent_operational_account.get())
+        standby_nfts = get_tokens(ent_standby_account.get()).get("account_nfts", [])
+        operational_nfts = get_tokens(ent_operational_account.get()).get("account_nfts", [])
         standby_has_nft = any(nft["NFTokenID"] == nft_id for nft in standby_nfts)
         operational_has_nft = any(nft["NFTokenID"] == nft_id for nft in operational_nfts)
 
         # 결과 출력
         text_standby_results.delete("1.0", tk.END)
         if not standby_has_nft:
-            text_standby_results.insert("1.0", f"Transferred NFT {nft_id} and {amount} XRP to {ent_operational_account.get()}\nOffer ID: {offer_id}")
+            text_standby_results.insert("1.0", f"Transferred NFT {nft_id} to {ent_operational_account.get()}\nOffer ID: {offer_id}")
         else:
             text_standby_results.insert("1.0", f"Error: NFT {nft_id} still in Standby account!")
 
         text_operational_results.delete("1.0", tk.END)
         if operational_has_nft:
-            text_operational_results.insert("1.0", f"Received NFT {nft_id} and {amount} XRP from {ent_standby_account.get()}\nOffer ID: {offer_id}")
+            text_operational_results.insert("1.0", f"Received NFT {nft_id} from {ent_standby_account.get()}\nOffer ID: {offer_id}")
             ent_operational_nft_id.delete(0, tk.END)
             ent_operational_nft_id.insert(0, nft_id)
             ent_standby_nft_id.delete(0, tk.END)
@@ -461,36 +498,37 @@ def transfer_nft():
 
 # Escrow 함수
 def create_escrow(seed, amount, destination, condition=None, cancel_after=None, finish_after=None):
-    wallet = Wallet.from_seed(seed)
-    sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
-    escrow_create = EscrowCreate(
-        account=wallet.classic_address,
-        amount=xrp_to_drops(amount),
-        destination=destination,
-        condition=condition,
-        cancel_after=int(cancel_after) if cancel_after else None,
-        finish_after=int(finish_after) if finish_after else None,
-        sequence=sequence
-    )
     try:
+        check_balance(seed, amount)
+        wallet = Wallet.from_seed(seed)
+        sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
+        escrow_create = EscrowCreate(
+            account=wallet.classic_address,
+            amount=xrp_to_drops(float(amount)),
+            destination=destination,
+            condition=condition,
+            cancel_after=int(cancel_after) if cancel_after else None,
+            finish_after=int(finish_after) if finish_after else None,
+            sequence=sequence
+        )
         response = xrpl.transaction.submit_and_wait(escrow_create, client, wallet)
         text_create_results.delete("1.0", tk.END)
         text_create_results.insert("1.0", json.dumps(response.result, indent=4))
     except Exception as e:
         text_create_results.delete("1.0", tk.END)
-        text_create_results.insert("1.0", f"Error: {str(e)}")
 
 def finish_escrow(seed, owner, offer_sequence, condition=None):
-    wallet = Wallet.from_seed(seed)
-    sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
-    escrow_finish = EscrowFinish(
-        account=wallet.classic_address,
-        owner=owner,
-        offer_sequence=int(offer_sequence),
-        condition=condition,
-        sequence=sequence
-    )
     try:
+        check_balance(seed, 0)
+        wallet = Wallet.from_seed(seed)
+        sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
+        escrow_finish = EscrowFinish(
+            account=wallet.classic_address,
+            owner=owner,
+            offer_sequence=int(offer_sequence),
+            condition=condition,
+            sequence=sequence
+        )
         response = xrpl.transaction.submit_and_wait(escrow_finish, client, wallet)
         text_finish_results.delete("1.0", tk.END)
         text_finish_results.insert("1.0", json.dumps(response.result, indent=4))
@@ -499,15 +537,16 @@ def finish_escrow(seed, owner, offer_sequence, condition=None):
         text_finish_results.insert("1.0", f"Error: {str(e)}")
 
 def cancel_escrow(seed, owner, offer_sequence):
-    wallet = Wallet.from_seed(seed)
-    sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
-    escrow_cancel = EscrowCancel(
-        account=wallet.classic_address,
-        owner=owner,
-        offer_sequence=int(offer_sequence),
-        sequence=sequence
-    )
     try:
+        check_balance(seed, 0)
+        wallet = Wallet.from_seed(seed)
+        sequence = xrpl.account.get_next_valid_seq_number(wallet.classic_address, client)
+        escrow_cancel = EscrowCancel(
+            account=wallet.classic_address,
+            owner=owner,
+            offer_sequence=int(offer_sequence),
+            sequence=sequence
+        )
         response = xrpl.transaction.submit_and_wait(escrow_cancel, client, wallet)
         text_cancel_results.delete("1.0", tk.END)
         text_cancel_results.insert("1.0", json.dumps(response.result, indent=4))
