@@ -26,10 +26,9 @@ hardhat_url = "http://127.0.0.1:8545"  # Hardhat 노드 기본 URL
 web3 = Web3(Web3.HTTPProvider(hardhat_url))
 
 # Hardhat 로컬 네트워크에 배포된 스마트 컨트랙트 주소
-# Hardhat 배포 후 얻은 주소를 여기에 입력하세요
-contract_address = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+contract_address = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"  # 배포된 주소로 교체
 
-# 컨트랙트 ABI (OwnershipTransferred 이벤트 포함)
+# 컨트랙트 ABI
 contract_abi = [
     {
         "anonymous": False,
@@ -45,7 +44,7 @@ contract_abi = [
 ]
 contract = web3.eth.contract(address=contract_address, abi=contract_abi)
 
-# 연결 확인 (선택 사항)
+# 연결 확인
 print("Web3 연결 상태:", web3.is_connected())
 
 # Tkinter 창 생성
@@ -87,7 +86,7 @@ ent_standby_nft_id = tk.Entry(master=frm_form, width=50)
 lbl_standby_results = tk.Label(master=frm_form, text='Results')
 text_standby_results = tk.Text(master=frm_form, height=20, width=65)
 
-# Standby 필드 배치 (mod4 관련 필드 제거)
+# Standby 필드 배치
 lbl_standby_seed.grid(row=0, column=0, sticky="w")
 ent_standby_seed.grid(row=0, column=1)
 lbl_standby_account.grid(row=2, column=0, sticky="e")
@@ -116,7 +115,7 @@ text_standby_results.grid(row=13, column=1, sticky="nw")
 
 cb_standby_allow_rippling.select()
 
-# Operational 계정 필드 (mod4 관련 필드 제거)
+# Operational 계정 필드
 lbl_operational_seed = tk.Label(master=frm_form, text="Operational Seed")
 ent_operational_seed = tk.Entry(master=frm_form, width=50)
 lbl_operational_account = tk.Label(master=frm_form, text="Operational Account")
@@ -172,7 +171,7 @@ text_operational_results.grid(row=13, column=5, sticky="nw")
 
 cb_operational_allow_rippling.select()
 
-# 핸들러 정의 (mod4 관련 함수 제거)
+# 핸들러 정의
 ## Module 3 핸들러
 def standby_mint_token():
     results = mint_token(
@@ -344,6 +343,15 @@ def operational_send_xrp():
         text_operational_results.delete("1.0", tk.END)
         text_operational_results.insert("1.0", f"Error: {str(e)}")
 
+# 스마트 컨트랙트 연결 확인 함수
+def check_contract_connection():
+    result = {}
+    result["is_connected"] = web3.is_connected()
+    result["contract_address"] = contract.address
+    result["current_block"] = web3.eth.block_number
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(result, indent=4))
+
 # EVM 이벤트 핸들러
 def handle_evm_event(event):
     print(f"EVM Event - From: {event['args']['from']}, To: {event['args']['to']}, Token ID: {event['args']['tokenId']}")
@@ -362,30 +370,29 @@ def handle_evm_event(event):
         text_standby_results.delete("1.0", tk.END)
         text_standby_results.insert("1.0", f"EVM NFT Mint Error: {str(e)}")
 
+# 수정된 이벤트 리스닝 함수 (Polling 방식)
 def listen_to_evm_events():
-    try:
-        event_filter = contract.events.OwnershipTransferred.createFilter(fromBlock='latest')
-        print("이벤트 필터 생성 완료:", event_filter)
-        while True:
-            events = event_filter.get_new_entries()
-            if events:
-                print(f"감지된 이벤트 수: {len(events)}")
-                for event in events:
-                    window.after(0, handle_evm_event, event)
+    last_block = web3.eth.block_number  # 마지막 확인된 블록 번호 저장
+    print(f"이벤트 리스닝 시작 - 초기 블록 번호: {last_block}")
+    while True:
+        try:
+            current_block = web3.eth.block_number
+            if current_block > last_block:
+                # 새로운 블록에서 이벤트 확인
+                events = contract.events.OwnershipTransferred.get_all_entries()
+                if events:
+                    new_events = [event for event in events if event['blockNumber'] > last_block]
+                    if new_events:
+                        print(f"감지된 새 이벤트 수: {len(new_events)}")
+                        for event in new_events:
+                            window.after(0, handle_evm_event, event)
+                last_block = current_block
+            sleep(2)  # 2초마다 체크
+        except Exception as e:
+            print(f"이벤트 리스닝 오류: {str(e)}")
             sleep(2)
-    except Exception as e:
-        print(f"이벤트 리스닝 오류: {str(e)}")
 
-# 스마트 컨트랙트 연결 확인 함수
-def check_contract_connection():
-    result = {}
-    result["is_connected"] = web3.is_connected()
-    result["contract_address"] = contract.address
-    result["current_block"] = web3.eth.block_number
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(result, indent=4))
-
-# 버튼 설정 (mod4 버튼 제거, 연결 확인 버튼 추가)
+# 버튼 설정
 btn_get_standby_account = tk.Button(master=frm_form, text="Get Standby Account", command=get_standby_account)
 btn_get_standby_account.grid(row=0, column=2, sticky="nsew")
 btn_get_standby_account_info = tk.Button(master=frm_form, text="Get Standby Account Info", command=get_standby_account_info)
@@ -428,7 +435,7 @@ btn_op_get_tokens.grid(row=9, column=3, sticky="nsew")
 btn_op_burn_token = tk.Button(master=frm_form, text="Burn NFT", command=operational_burn_token)
 btn_op_burn_token.grid(row=10, column=3, sticky="nsew")
 
-# 스마트 컨트랙트 연결 확인 버튼 추가
+# 스마트 컨트랙트 연결 확인 버튼
 btn_check_contract = tk.Button(master=frm_form, text="Check Contract Connection", command=check_contract_connection)
 btn_check_contract.grid(row=11, column=2, columnspan=2, sticky="nsew")
 
