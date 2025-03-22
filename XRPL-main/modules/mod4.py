@@ -7,7 +7,7 @@ from datetime import timedelta
 from xrpl.models.requests import NFTSellOffers
 from xrpl.models.requests import NFTBuyOffers
 from xrpl.models.transactions import NFTokenAcceptOffer
-testnet_url = "https://s.altnet.rippletest.net:51234"
+testnet_url = "https://s.devnet.rippletest.net:51234"
 
 def create_sell_offer(seed, amount, nftoken_id, expiration, destination):
     """create_sell_offer"""
