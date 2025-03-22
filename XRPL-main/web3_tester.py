@@ -4,56 +4,67 @@ import json
 from web3 import Web3
 import threading
 from time import sleep
+from datetime import datetime
+import os  # 파일 저장용
 
-# XRPL 모듈 임포트 (modules 디렉토리 기준)
+# XRPL 모듈 임포트
 from modules.mod1 import get_account, get_account_info, send_xrp
-from modules.mod2 import (
-    create_trust_line,
-    send_currency,
-    get_balance,
-    configure_account,
-)
-from modules.mod3 import (
-    mint_token,
-    get_tokens,
-    burn_token,
-)
+from modules.mod2 import create_trust_line, send_currency, get_balance, configure_account
+from modules.mod3 import mint_token, get_tokens, burn_token
 
-# Hardhat 로컬 네트워크 RPC URL 설정
-hardhat_url = "http://127.0.0.1:8545"  # Hardhat 노드 기본 URL
-
-# Web3 인스턴스 초기화
+# Hardhat 로컬 네트워크 설정 (선택적 유지)
+hardhat_url = "http://127.0.0.1:8545"
 web3 = Web3(Web3.HTTPProvider(hardhat_url))
 
-# Hardhat 로컬 네트워크에 배포된 스마트 컨트랙트 주소
+# 스마트 컨트랙트 설정 (주소가 유효하지 않을 경우 예외 처리)
 contract_address = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"  # 배포된 주소로 교체
-
-# 컨트랙트 ABI
 contract_abi = [
     {
         "anonymous": False,
         "inputs": [
             {"indexed": True, "name": "from", "type": "address"},
             {"indexed": True, "name": "to", "type": "address"},
-            {"indexed": False, "name": "tokenId", "type": "uint256"},
-            {"indexed": False, "name": "assetId", "type": "string"}
+            {"indexed": True, "name": "tokenId", "type": "uint256"}
         ],
-        "name": "OwnershipTransferred",
+        "name": "Transfer",
         "type": "event"
+    },
+    {
+        "inputs": [{"name": "to", "type": "address"}],
+        "name": "mint",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     }
 ]
-contract = web3.eth.contract(address=contract_address, abi=contract_abi)
 
-# 연결 확인
-print("Web3 연결 상태:", web3.is_connected())
+try:
+    if web3.is_connected() and web3.is_address(contract_address):
+        contract = web3.eth.contract(address=contract_address, abi=contract_abi)
+        print("Web3 연결 상태: True, 컨트랙트 주소 유효")
+    else:
+        raise ValueError("컨트랙트 주소가 유효하지 않거나 네트워크에 연결되지 않음")
+except Exception as e:
+    contract = None
+    print(f"사이드체인 연결 오류: {str(e)}. XRPL만으로 작동합니다.")
 
 # Tkinter 창 생성
 window = tk.Tk()
-window.title("Quickstart Module")
+window.title("XRPL NFT Platform with Server Upload")
 
 # Rippling 변수
 standbyRippling = tk.BooleanVar()
 operationalRippling = tk.BooleanVar()
+
+# 거래 내역 파일 경로 (서버 대체)
+TRANSACTION_FILE = "transactions.json"
+
+# 거래 내역 초기화
+if os.path.exists(TRANSACTION_FILE):
+    with open(TRANSACTION_FILE, "r") as f:
+        transaction_history = json.load(f)
+else:
+    transaction_history = []
 
 # Form 프레임
 frm_form = tk.Frame(relief=tk.SUNKEN, borderwidth=3)
@@ -172,121 +183,6 @@ text_operational_results.grid(row=13, column=5, sticky="nw")
 cb_operational_allow_rippling.select()
 
 # 핸들러 정의
-## Module 3 핸들러
-def standby_mint_token():
-    results = mint_token(
-        ent_standby_seed.get(),
-        ent_standby_uri.get(),
-        ent_standby_flags.get(),
-        ent_standby_transfer_fee.get(),
-        ent_standby_taxon.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def standby_get_tokens():
-    results = get_tokens(ent_standby_account.get())
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def standby_burn_token():
-    results = burn_token(
-        ent_standby_seed.get(),
-        ent_standby_nft_id.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def operational_mint_token():
-    results = mint_token(
-        ent_operational_seed.get(),
-        ent_operational_uri.get(),
-        ent_operational_flags.get(),
-        ent_operational_transfer_fee.get(),
-        ent_operational_taxon.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def operational_get_tokens():
-    results = get_tokens(ent_operational_account.get())
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def operational_burn_token():
-    results = burn_token(
-        ent_operational_seed.get(),
-        ent_operational_nft_id.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-## Module 2 핸들러
-def standby_create_trust_line():
-    results = create_trust_line(
-        ent_standby_seed.get(),
-        ent_standby_destination.get(),
-        ent_standby_currency.get(),
-        ent_standby_amount.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def standby_send_currency():
-    results = send_currency(
-        ent_standby_seed.get(),
-        ent_standby_destination.get(),
-        ent_standby_currency.get(),
-        ent_standby_amount.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def standby_configure_account():
-    results = configure_account(
-        ent_standby_seed.get(),
-        standbyRippling.get()
-    )
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-
-def operational_create_trust_line():
-    results = create_trust_line(
-        ent_operational_seed.get(),
-        ent_operational_destination.get(),
-        ent_operational_currency.get(),
-        ent_operational_amount.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def operational_send_currency():
-    results = send_currency(
-        ent_operational_seed.get(),
-        ent_operational_destination.get(),
-        ent_operational_currency.get(),
-        ent_operational_amount.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def operational_configure_account():
-    results = configure_account(
-        ent_operational_seed.get(),
-        operationalRippling.get()
-    )
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-def get_balances():
-    results = get_balance(ent_operational_account.get(), ent_standby_account.get())
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(results, indent=4))
-    results = get_balance(ent_standby_account.get(), ent_operational_account.get())
-    text_operational_results.delete("1.0", tk.END)
-    text_operational_results.insert("1.0", json.dumps(results, indent=4))
-
-## Module 1 핸들러
 def get_standby_account():
     new_wallet = get_account(ent_standby_seed.get())
     ent_standby_account.delete(0, tk.END)
@@ -314,6 +210,81 @@ def standby_send_xrp():
     except Exception as e:
         text_standby_results.delete("1.0", tk.END)
         text_standby_results.insert("1.0", f"Error: {str(e)}")
+
+def standby_mint_token():
+    results = mint_token(
+        ent_standby_seed.get(),
+        ent_standby_uri.get(),
+        ent_standby_flags.get(),
+        ent_standby_transfer_fee.get(),
+        ent_standby_taxon.get()
+    )
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+def standby_get_tokens():
+    results = get_tokens(ent_standby_account.get())
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+def standby_burn_token():
+    results = burn_token(ent_standby_seed.get(), ent_standby_nft_id.get())
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(results, indent=4))
+
+# NFT 거래 함수 (소각/재발행으로 소유권 업데이트, 거래 내역 서버 업로드)
+def transfer_nft():
+    try:
+        # XRP 결제: Standby -> Operational
+        amount = ent_standby_amount.get()
+        response = send_xrp(ent_standby_seed.get(), amount, ent_operational_account.get())
+        if isinstance(response, dict) and "error" in response:
+            raise Exception(response["error"])
+
+        # 기존 NFT 소각
+        nft_id = ent_standby_nft_id.get()
+        if not nft_id:
+            raise Exception("NFT ID가 필요합니다.")
+        burn_token(ent_standby_seed.get(), nft_id)
+
+        # 기존 URI 가져오기
+        old_uri = ent_standby_uri.get() or '{"serial": "LUX123", "owner": "rStandbyAccount"}'
+        old_data = json.loads(old_uri)
+        old_data["owner"] = ent_operational_account.get()  # 소유권 업데이트
+
+        # 새 NFT 발행 (Operational 계정에 기록)
+        new_uri = json.dumps(old_data, indent=4)
+        results = mint_token(ent_operational_seed.get(), new_uri, "0", "0", "1")
+
+        # 거래 내역 생성 및 서버 업로드
+        new_transaction = {
+            "nft_id": nft_id,
+            "from": ent_standby_account.get(),
+            "to": ent_operational_account.get(),
+            "amount": amount,
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        transaction_history.append(new_transaction)
+        with open(TRANSACTION_FILE, "w") as f:
+            json.dump(transaction_history, f, indent=4)
+
+        # 결과 출력
+        text_standby_results.delete("1.0", tk.END)
+        text_standby_results.insert("1.0", json.dumps(results, indent=4))
+        text_operational_results.delete("1.0", tk.END)
+        text_operational_results.insert("1.0", f"Transferred {amount} XRP and NFT to {ent_operational_account.get()}\nNew URI: {new_uri}")
+        
+        # 계정 정보 업데이트
+        get_standby_account_info()
+        get_operational_account_info()
+    except Exception as e:
+        text_standby_results.delete("1.0", tk.END)
+        text_standby_results.insert("1.0", f"Error: {str(e)}")
+
+# 거래 내역 조회 함수
+def view_transaction_history():
+    text_standby_results.delete("1.0", tk.END)
+    text_standby_results.insert("1.0", json.dumps(transaction_history, indent=4))
 
 def get_operational_account():
     new_wallet = get_account(ent_operational_seed.get())
@@ -343,43 +314,49 @@ def operational_send_xrp():
         text_operational_results.delete("1.0", tk.END)
         text_operational_results.insert("1.0", f"Error: {str(e)}")
 
-# 스마트 컨트랙트 연결 확인 함수
+# 스마트 컨트랙트 연결 확인 함수 (예외 처리 포함)
 def check_contract_connection():
-    result = {}
-    result["is_connected"] = web3.is_connected()
-    result["contract_address"] = contract.address
-    result["current_block"] = web3.eth.block_number
-    text_standby_results.delete("1.0", tk.END)
-    text_standby_results.insert("1.0", json.dumps(result, indent=4))
-
-# EVM 이벤트 핸들러
-def handle_evm_event(event):
-    print(f"EVM Event - From: {event['args']['from']}, To: {event['args']['to']}, Token ID: {event['args']['tokenId']}")
-    uri = json.dumps({
-        "from": event["args"]["from"],
-        "to": event["args"]["to"],
-        "tokenId": event["args"]["tokenId"],
-        "assetId": event["args"]["assetId"],
-        "txHash": event["transactionHash"].hex()
-    })
     try:
-        results = mint_token(ent_standby_seed.get(), uri, "0", "0", "1")
+        if contract is None:
+            raise ValueError("컨트랙트 연결이 초기화되지 않음")
+        result = {
+            "is_connected": web3.is_connected(),
+            "contract_address": contract.address,
+            "current_block": web3.eth.block_number
+        }
         text_standby_results.delete("1.0", tk.END)
-        text_standby_results.insert("1.0", json.dumps(results, indent=4))
+        text_standby_results.insert("1.0", json.dumps(result, indent=4))
     except Exception as e:
         text_standby_results.delete("1.0", tk.END)
-        text_standby_results.insert("1.0", f"EVM NFT Mint Error: {str(e)}")
+        text_standby_results.insert("1.0", f"컨트랙트 연결 오류: {str(e)}. XRPL은 정상 작동합니다.")
 
-# 수정된 이벤트 리스닝 함수 (Polling 방식)
+# EVM 이벤트 핸들러 (예외 처리 포함)
+def handle_evm_event(event):
+    try:
+        event_data = {
+            "from": event["args"]["from"],
+            "to": event["args"]["to"],
+            "tokenId": event["args"]["tokenId"],
+            "txHash": event["transactionHash"].hex()
+        }
+        print(f"감지된 이벤트: {json.dumps(event_data, indent=4)}")
+        text_standby_results.delete("1.0", tk.END)
+        text_standby_results.insert("1.0", json.dumps(event_data, indent=4))
+    except Exception as e:
+        print(f"EVM 이벤트 처리 오류: {str(e)}. XRPL은 정상 작동합니다.")
+
+# 수정된 이벤트 리스닝 함수 (예외 처리 포함)
 def listen_to_evm_events():
-    last_block = web3.eth.block_number  # 마지막 확인된 블록 번호 저장
+    if contract is None:
+        print("컨트랙트 연결 없음. 이벤트 리스닝 건너뜀.")
+        return
+    last_block = web3.eth.block_number
     print(f"이벤트 리스닝 시작 - 초기 블록 번호: {last_block}")
     while True:
         try:
             current_block = web3.eth.block_number
             if current_block > last_block:
-                # 새로운 블록에서 이벤트 확인
-                events = contract.events.OwnershipTransferred.get_all_entries()
+                events = contract.events.Transfer.get_all_entries()
                 if events:
                     new_events = [event for event in events if event['blockNumber'] > last_block]
                     if new_events:
@@ -387,9 +364,9 @@ def listen_to_evm_events():
                         for event in new_events:
                             window.after(0, handle_evm_event, event)
                 last_block = current_block
-            sleep(2)  # 2초마다 체크
+            sleep(2)
         except Exception as e:
-            print(f"이벤트 리스닝 오류: {str(e)}")
+            print(f"이벤트 리스닝 오류: {str(e)}. XRPL은 정상 작동합니다.")
             sleep(2)
 
 # 버튼 설정
@@ -399,20 +376,18 @@ btn_get_standby_account_info = tk.Button(master=frm_form, text="Get Standby Acco
 btn_get_standby_account_info.grid(row=1, column=2, sticky="nsew")
 btn_standby_send_xrp = tk.Button(master=frm_form, text="Send XRP >", command=standby_send_xrp)
 btn_standby_send_xrp.grid(row=2, column=2, sticky="nsew")
-btn_standby_create_trust_line = tk.Button(master=frm_form, text="Create Trust Line", command=standby_create_trust_line)
-btn_standby_create_trust_line.grid(row=4, column=2, sticky="nsew")
-btn_standby_send_currency = tk.Button(master=frm_form, text="Send Currency >", command=standby_send_currency)
-btn_standby_send_currency.grid(row=5, column=2, sticky="nsew")
-btn_standby_get_balances = tk.Button(master=frm_form, text="Get Balances", command=get_balances)
-btn_standby_get_balances.grid(row=6, column=2, sticky="nsew")
-btn_standby_configure_account = tk.Button(master=frm_form, text="Configure Account", command=standby_configure_account)
-btn_standby_configure_account.grid(row=7, column=0, sticky="nsew")
 btn_standby_mint_token = tk.Button(master=frm_form, text="Mint NFT", command=standby_mint_token)
 btn_standby_mint_token.grid(row=8, column=2, sticky="nsew")
 btn_standby_get_tokens = tk.Button(master=frm_form, text="Get NFTs", command=standby_get_tokens)
 btn_standby_get_tokens.grid(row=9, column=2, sticky="nsew")
 btn_standby_burn_token = tk.Button(master=frm_form, text="Burn NFT", command=standby_burn_token)
 btn_standby_burn_token.grid(row=10, column=2, sticky="nsew")
+btn_transfer_nft = tk.Button(master=frm_form, text="Transfer NFT >", command=transfer_nft)
+btn_transfer_nft.grid(row=11, column=2, sticky="nsew")
+btn_view_history = tk.Button(master=frm_form, text="View History", command=view_transaction_history)
+btn_view_history.grid(row=12, column=2, sticky="nsew")
+btn_check_contract = tk.Button(master=frm_form, text="Check Contract Connection", command=check_contract_connection)
+btn_check_contract.grid(row=13, column=2, sticky="nsew")
 
 btn_get_operational_account = tk.Button(master=frm_form, text="Get Operational Account", command=get_operational_account)
 btn_get_operational_account.grid(row=0, column=3, sticky="nsew")
@@ -420,27 +395,12 @@ btn_get_op_account_info = tk.Button(master=frm_form, text="Get Op Account Info",
 btn_get_op_account_info.grid(row=1, column=3, sticky="nsew")
 btn_op_send_xrp = tk.Button(master=frm_form, text="< Send XRP", command=operational_send_xrp)
 btn_op_send_xrp.grid(row=2, column=3, sticky="nsew")
-btn_op_create_trust_line = tk.Button(master=frm_form, text="Create Trust Line", command=operational_create_trust_line)
-btn_op_create_trust_line.grid(row=4, column=3, sticky="nsew")
-btn_op_send_currency = tk.Button(master=frm_form, text="< Send Currency", command=operational_send_currency)
-btn_op_send_currency.grid(row=5, column=3, sticky="nsew")
-btn_op_get_balances = tk.Button(master=frm_form, text="Get Balances", command=get_balances)
-btn_op_get_balances.grid(row=6, column=3, sticky="nsew")
-btn_op_configure_account = tk.Button(master=frm_form, text="Configure Account", command=operational_configure_account)
-btn_op_configure_account.grid(row=7, column=4, sticky="nsew")
-btn_op_mint_token = tk.Button(master=frm_form, text="Mint NFT", command=operational_mint_token)
-btn_op_mint_token.grid(row=8, column=3, sticky="nsew")
-btn_op_get_tokens = tk.Button(master=frm_form, text="Get NFTs", command=operational_get_tokens)
-btn_op_get_tokens.grid(row=9, column=3, sticky="nsew")
-btn_op_burn_token = tk.Button(master=frm_form, text="Burn NFT", command=operational_burn_token)
-btn_op_burn_token.grid(row=10, column=3, sticky="nsew")
 
-# 스마트 컨트랙트 연결 확인 버튼
-btn_check_contract = tk.Button(master=frm_form, text="Check Contract Connection", command=check_contract_connection)
-btn_check_contract.grid(row=11, column=2, columnspan=2, sticky="nsew")
-
-# 메인 루프 및 EVM 리스너 시작
+# 메인 루프 및 EVM 리스너 시작 (예외 처리로 안전하게)
 if __name__ == "__main__":
-    evm_thread = threading.Thread(target=listen_to_evm_events, daemon=True)
-    evm_thread.start()
+    if contract is not None:
+        evm_thread = threading.Thread(target=listen_to_evm_events, daemon=True)
+        evm_thread.start()
+    else:
+        print("EVM 연결 없음. XRPL만 실행.")
     window.mainloop()
