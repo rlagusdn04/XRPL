@@ -1,0 +1,77 @@
+.app {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.accounts-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.account-section {
+  border: 1px solid #ccc;
+  padding: 15px;
+  border-radius: 5px;
+  flex: 1;
+  min-width: 300px;
+}
+
+.standby {
+  background-color: #f9f9f9;
+}
+
+.operational {
+  background-color: #f0f0f0;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.input-group label {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+
+.input-group input {
+  margin-top: 5px;
+  padding: 5px;
+  font-size: 14px;
+}
+
+.button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.button-group button {
+  padding: 8px 12px;
+  font-size: 14px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.button-group button:hover {
+  background-color: #0056b3;
+}
+
+.results {
+  background-color: #fff;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+}
