@@ -1,5 +1,6 @@
 # XRPL
 starting XRPL with Google colab -> notebooks
+
 Organizations: https://github.com/XRPL-Blockchain-Hackathon-De-Buthon/X-Trove
 
 [프로젝트 개요]
